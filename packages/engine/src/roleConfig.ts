@@ -11,7 +11,9 @@ export type ConfigWarningCode =
   | 'guaranteed_exceeds_start_range'
   | 'guaranteed_combo_conflict'
   | 'too_many_pack_roles'
-  | 'small_group_guaranteed';
+  | 'small_group_guaranteed'
+  | 'guaranteed_exceeds_budget'
+  | 'no_role_available_for_quest';
 
 export interface ConfigWarning {
   code: ConfigWarningCode;
@@ -46,6 +48,10 @@ export function validateRoleConfig(
   }
   const packRoles = guaranteed.filter((r) => rules.roles[r].faction === 'pack');
   if (packRoles.length > wolfCount(playerCount, rules)) out.push({ code: 'too_many_pack_roles', roles: packRoles });
+  if (guaranteed.length > Math.floor(playerCount / Math.max(1, rules.roleRewards.budgetDivisor))) out.push({ code: 'guaranteed_exceeds_budget', roles: guaranteed });
+  // Die erste erfolgreiche Quest hat keine Rolle zur Auswahl (z. B. 4–5 Spieler: alle Mindestspielerzahlen höher).
+  const questPool = (Object.keys(rules.roles) as RoleId[]).filter((r) => { const d = rules.roles[r]; const m = modes[r]; return d.special && (m ? m !== 'off' : d.enabled) && d.unlock.triggers.includes('quest_reward') && playerCount >= d.minPlayers && (d.maxPlayers === null || playerCount <= d.maxPlayers); });
+  if (questPool.length === 0) out.push({ code: 'no_role_available_for_quest', roles: [] });
   if (playerCount <= 6 && guaranteed.length > 0) out.push({ code: 'small_group_guaranteed', roles: guaranteed });
   return out;
 }

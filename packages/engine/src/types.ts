@@ -108,8 +108,15 @@ export interface RoleDef {
   abilities: AbilityDef[];
   /** Höchstens so viele lebende Träger gleichzeitig (null = unbegrenzt). */
   maxLivingHolders: number | null;
-  /** Höchstens so oft je Partie vergeben (null = unbegrenzt). Wiedervergabe nach dem Tod des Trägers ist möglich. */
+  /** Höchstens so oft je Partie vergeben (null = unbegrenzt). */
   maxGrants: number | null;
+  /** Jede Rollenart höchstens so oft je Partie (Start + später, auch ausgeschiedene Träger zählen; null = unbegrenzt). */
+  maxPerGame: number | null;
+  /**
+   * Zeit-/Phasenpräferenz: Gewichtungsfaktor je Spielphase (früh/mittel/spät, Grenzen in `Rules.roleRewards.phases`).
+   * Reine Konfiguration der Vergabewahrscheinlichkeit, keine Stärke-/Difficulty-Logik. 0 = in dieser Phase nicht.
+   */
+  timing: { early: number; mid: number; late: number };
   /** Ist die Rolle im Spiel, wissen alle von Beginn an davon (z. B. Grenzgänger). */
   announcedAtStart: boolean;
 }
@@ -138,6 +145,27 @@ export interface MomentDef {
   days?: number[];
 }
 
+/** Reward Director: Rollenbudget, erste Quest, Folgequests, Tageslimit, Fallback, Kleingruppen (alles Konfiguration). */
+export interface RoleRewardRules {
+  /** Gesamtbudget Sonderrollen je Partie = floor(Startspieler / budgetDivisor); Obergrenze, kein Zielwert. Startrollen zählen mit. */
+  budgetDivisor: number;
+  /** Die erste erfolgreiche Quest der Partie schaltet (wenn zulässig) garantiert genau eine Sonderrolle frei. */
+  firstSuccessfulQuestGuaranteed: boolean;
+  /** Die direkt folgende erfolgreiche Quest nach einer Rollenbelohnung vergibt keine Rolle. */
+  noRoleRewardAfterRoleReward: boolean;
+  /** Höchstens so viele neue Sonderrollen pro Spieltag (Startrollen zählen nicht). */
+  maxNewRolesPerDay: number;
+  /** Belohnung, wenn eine Rolle nicht vergeben werden kann bzw. darf (keine Rolle). */
+  fallback: Exclude<QuestRewardDef, { kind: 'unlock_role' }>;
+  /** Spielphasen für `RoleDef.timing`: früh bis Tag `earlyUntilDay`, mittel bis `midUntilDay`, danach spät. */
+  phases: { earlyUntilDay: number; midUntilDay: number };
+  /**
+   * Kleingruppen (Startspielerzahl ≤ maxStartPlayers): Statt `finaleAlive` gilt für neue Rollen
+   * (insbesondere die erste Quest-Freischaltung) nur diese Mindestzahl Lebender.
+   */
+  smallGroup: { maxStartPlayers: number; minAlive: number };
+}
+
 export interface Rules {
   minPlayers: number;
   maxPlayers: number;
@@ -163,6 +191,7 @@ export interface Rules {
   comboLimits: { roles: RoleId[]; max: Record<SizeBand, number> }[];
   /** Ab dieser Zahl lebender Spieler werden keine neuen Rollen mehr eingeführt (0 = aus). Zustandsabhängig, aber nicht stärkebasiert. */
   finaleAlive: number;
+  roleRewards: RoleRewardRules;
   /** Rollen-Momente. Impulse erscheinen bei JEDEM Moment, unabhängig davon, ob eine Rolle vergeben wird. */
   moments: Record<'after_first_council' | 'day_start', MomentDef>;
   /** Ausschau halten des Rudels gegen den Beobachter. */
@@ -372,6 +401,12 @@ export interface GameState {
   /** Anzahl späterer Rollenvergaben (für die Obergrenze) und je Rolle. */
   laterGrants: number;
   grantsByRole: Partial<Record<RoleId, number>>;
+  /** Neue Sonderrollen je Spieltag (Tageslimit). */
+  grantsByDay: Record<number, number>;
+  /** Erfolgreich beendete Quests dieser Partie. */
+  questSuccesses: number;
+  /** Art der Belohnung der letzten erfolgreichen Quest (für die Unterbrechung von Rollenbelohnungen). */
+  lastQuestReward: 'role' | 'other' | 'none' | null;
   bwDecidedAnnounced: boolean;
   night: NightState | null;
   /** Geheime Verdachtsabgaben (nur für den Spielrückblick). */

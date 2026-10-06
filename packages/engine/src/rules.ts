@@ -21,6 +21,8 @@ function role(def: Partial<RoleDef> & Pick<RoleDef, 'id' | 'faction'>): RoleDef 
     abilities: [],
     maxLivingHolders: 1,
     maxGrants: null,
+    maxPerGame: 1,
+    timing: { early: 1, mid: 1, late: 1 },
     announcedAtStart: false,
     ...def,
   };
@@ -38,19 +40,19 @@ export const DEFAULT_RULES: Rules = {
     villager: role({ id: 'villager', faction: 'village', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     wolf: role({ id: 'wolf', faction: 'pack', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     scout: role({
-      id: 'scout', faction: 'village', weight: 1, minPlayers: 6,
+      timing: { early: 2, mid: 1, late: 1 }, id: 'scout', faction: 'village', weight: 1, minPlayers: 6,
       abilities: [ab({ id: 'scout', kind: 'inspect', uses: 2 })],
     }),
     tracker: role({
-      id: 'tracker', faction: 'village', weight: 2, minPlayers: 6,
+      timing: { early: 2, mid: 1, late: 1 }, id: 'tracker', faction: 'village', weight: 2, minPlayers: 6,
       abilities: [ab({ id: 'track', kind: 'inspect_group', uses: 1, groupSize: 3 })],
     }),
     guardian: role({
-      id: 'guardian', faction: 'village', weight: 3, minPlayers: 7,
+      timing: { early: 2, mid: 2, late: 1 }, id: 'guardian', faction: 'village', weight: 3, minPlayers: 7,
       abilities: [ab({ id: 'protect', kind: 'protect', uses: null, noRepeatTarget: true, allowSelf: true })],
     }),
     alchemist: role({
-      id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8,
+      timing: { early: 2, mid: 2, late: 1 }, id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8,
       // Ausschließlich ein einmaliger Heiltrank (keine Tötungsfähigkeit).
       abilities: [ab({ id: 'potion_heal', kind: 'heal', uses: 1 })],
     }),
@@ -63,7 +65,7 @@ export const DEFAULT_RULES: Rules = {
       abilities: [ab({ id: 'last_shot', kind: 'last_shot', uses: 1 })],
     }),
     observer: role({
-      id: 'observer', faction: 'village', weight: 1, minPlayers: 8, // Mindestspielerzahl: Startwert, offen
+      timing: { early: 2, mid: 1, late: 1 }, id: 'observer', faction: 'village', weight: 1, minPlayers: 8, // Mindestspielerzahl: Startwert, offen
       abilities: [ab({ id: 'observe', kind: 'observe', uses: null, windowMs: 10_000 })],
     }),
     shadowwolf: role({
@@ -80,6 +82,16 @@ export const DEFAULT_RULES: Rules = {
   maxLaterSpecials: { tiny: 1, small: 1, medium: 2, large: 3 },
   comboLimits: [{ roles: ['scout', 'tracker'], max: { tiny: 1, small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
+  roleRewards: {
+    budgetDivisor: 2,
+    firstSuccessfulQuestGuaranteed: true,
+    noRoleRewardAfterRoleReward: true,
+    maxNewRolesPerDay: 1,
+    fallback: { kind: 'hint' },
+    // Spielphasen und Timing-Faktoren der Rollen sind Startwerte (offen, siehe OPEN_DECISIONS).
+    phases: { earlyUntilDay: 2, midUntilDay: 4 },
+    smallGroup: { maxStartPlayers: 6, minAlive: 4 },
+  },
   moments: {
     after_first_council: { noRoleChance: 0.5 },
     day_start: { days: [3], noRoleChance: 0.5 },

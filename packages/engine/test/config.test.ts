@@ -15,13 +15,20 @@ function runQuest(s: GameState, questId: string, doneBy: string[]): GameState {
 }
 
 const day = (rules?: object, n = 10) => electSpeaker(withRoles(newGame(n, 'q', { rules: rules as never }), { p1: 'wolf', p2: 'wolf' }), T0 + 1, 'p9');
+/** Zustand nach einer bereits erfolgreichen ersten Quest (ohne Rollenbelohnung), ein späterer Tag. */
+const later = (rules?: object, n = 10) => {
+  const c = JSON.parse(JSON.stringify(day(rules, n))) as GameState;
+  c.questSuccesses = 1;
+  c.lastQuestReward = 'other';
+  return c;
+};
 const moments = (s: GameState) => s.events.filter((e) => e.kind === 'moment');
 const specials = (s: GameState) => Object.values(s.players).filter((p) => s.rules.roles[p.role].special);
 const everyone = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'];
 
 describe('Quest-Belohnungen', () => {
-  it('Eine Quest ohne konfigurierte Belohnung erzeugt auch bei Erfolg nichts', () => {
-    const s = day();
+  it('Eine spätere Quest ohne konfigurierte Belohnung erzeugt auch bei Erfolg nichts', () => {
+    const s = later();
     const before = moments(s).length;
     const r = runQuest(s, 'q-tabu-1', alive(s).map((p) => p.id));
     expect(r.events.at(-1)!.kind).toBe('quest_ended');
@@ -30,7 +37,7 @@ describe('Quest-Belohnungen', () => {
     expect(Object.values(r.players).map((p) => p.role)).toEqual(Object.values(s.players).map((p) => p.role));
   });
   it('Hinweis-Quest: nur bei ERFOLG ein (nicht geheimer) Hinweis-Moment', () => {
-    const s = day();
+    const s = later();
     const before = moments(s).length;
     const ok = runQuest(s, 'q-wissen-1', alive(s).map((p) => p.id));
     expect(moments(ok)).toHaveLength(before + 1);
@@ -62,21 +69,18 @@ describe('Quest-Belohnungen', () => {
     const r = runQuest(s, 'q-koordination-1', everyone);
     expect(r.moment?.kind).not.toBe('quest_unlock');
   });
-  it('Eine Rolle kann nach dem Ausscheiden ihres Besitzers erneut vergeben werden – nie zwei gleichzeitig', () => {
+  it('Jede Rollenart höchstens einmal pro Partie – auch nicht nach dem Tod des Trägers', () => {
     let s = day();
     s = runQuest(s, 'q-koordination-1', everyone);
     const first = Object.values(s.players).find((p) => p.role === 'scout')!;
-    // Zweite Freischaltung, solange der Späher lebt → nicht möglich
-    let again = JSON.parse(JSON.stringify(s)) as GameState;
-    again = runQuest(again, 'q-koordination-1', alive(again).map((p) => p.id));
-    expect(Object.values(again.players).filter((p) => p.role === 'scout' && p.alive)).toHaveLength(1);
-    // Besitzer scheidet aus → erneut möglich
     const dead = JSON.parse(JSON.stringify(s)) as GameState;
     dead.players[first.id]!.alive = false;
-    const regrant = runQuest(dead, 'q-koordination-1', alive(dead).map((p) => p.id));
-    const living = Object.values(regrant.players).filter((p) => p.role === 'scout' && p.alive);
-    expect(living).toHaveLength(1);
-    expect(living[0]!.id).not.toBe(first.id);
+    dead.questSuccesses = 2;
+    dead.lastQuestReward = 'other';
+    dead.day += 1;
+    const again = runQuest(dead, 'q-koordination-1', alive(dead).map((p) => p.id));
+    expect(Object.values(again.players).filter((p) => p.role === 'scout')).toHaveLength(1);
+    expect(again.moment?.kind).toBe('hint'); // Fallback statt Rolle
   });
   it('Das Moment-Format ist für alle gleich: Sound-/Haptik-Zeitpunkt und Dauer identisch', () => {
     const a = runQuest(day(), 'q-koordination-1', everyone);

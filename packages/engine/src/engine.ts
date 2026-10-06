@@ -140,6 +140,7 @@ function grantRole(s: GameState, playerId: PlayerId, role: RoleId): void {
   setRole(s, playerId, role, s.day);
   addNote(s, playerId, s.day, 'role_gained', { role });
   s.laterGrants += 1;
+  s.grantsByDay[s.day] = (s.grantsByDay[s.day] ?? 0) + 1;
   s.grantsByRole[role] = (s.grantsByRole[role] ?? 0) + 1;
 }
 
@@ -228,6 +229,9 @@ export function createGame(input: StartInput): GameState {
     playerCount: n,
     laterGrants: 0,
     grantsByRole: {},
+    grantsByDay: {},
+    questSuccesses: 0,
+    lastQuestReward: null,
     bwDecidedAnnounced: false,
     night: null,
     suspicions: [],
@@ -356,29 +360,53 @@ function startQuest(s: GameState, ctx: Ctx): void {
   pushEvent(s, ctx, 'quest_started', undefined, { questId: def.id });
 }
 
-function applyQuestReward(s: GameState, ctx: Ctx, reward: QuestRewardDef): void {
-  switch (reward.kind) {
-    case 'hint':
-      makeMoment(s, ctx, 'hint', { secret: false, hint: true });
-      break;
-    case 'unlock_role': {
-      // Ausdrücklich konfigurierte Freischaltung: öffentlich bekannt, dass jemand diese Fähigkeit erhält.
-      const a = pickLateAssignment(s, 'quest_reward', ctx.rng, reward.role);
-      if (!a) break; // kein geeigneter Empfänger: keine Freischaltung, keine Ansage
+/** Nicht-Rollen-Belohnungen (Hinweis, Ereignis). */
+function applyPlainReward(s: GameState, ctx: Ctx, reward: Exclude<QuestRewardDef, { kind: 'unlock_role' }>): void {
+  if (reward.kind === 'hint') makeMoment(s, ctx, 'hint', { secret: false, hint: true });
+  else pushEvent(s, ctx, 'quest_event', undefined, { eventKey: reward.eventKey });
+}
+
+/**
+ * Reward Director für erfolgreiche Quests.
+ * - Die erste erfolgreiche Quest der Partie schaltet (falls zulässig) garantiert genau eine Rolle frei.
+ * - Die direkt folgende erfolgreiche Quest nach einer Rollenbelohnung vergibt keine Rolle.
+ * - Kann/darf keine Rolle vergeben werden (Budget, Tageslimit, Pool, Empfänger …), greift die Fallbackbelohnung.
+ * Das Budget ist eine Obergrenze, kein Ziel. Die Fraktionsstärke fließt nirgends ein.
+ */
+function applyQuestReward(s: GameState, ctx: Ctx, configured: QuestRewardDef | undefined): void {
+  const rr = s.rules.roleRewards;
+  s.questSuccesses += 1;
+  const first = s.questSuccesses === 1;
+  let reward = configured;
+  if (first && rr.firstSuccessfulQuestGuaranteed) reward = { kind: 'unlock_role', role: configured?.kind === 'unlock_role' ? configured.role : undefined };
+  if (!reward) {
+    s.lastQuestReward = 'none';
+    return;
+  }
+  if (reward.kind === 'unlock_role') {
+    const blocked = !first && rr.noRoleRewardAfterRoleReward && s.lastQuestReward === 'role';
+    let a = null;
+    if (!blocked) {
+      a = pickLateAssignment(s, 'quest_reward', ctx.rng, reward.role);
+      if (!a && first && reward.role) a = pickLateAssignment(s, 'quest_reward', ctx.rng); // konfigurierte Rolle nicht möglich → Pool
+    }
+    if (a) {
+      // Öffentlich bekannt, dass jemand diese Fähigkeit erhält; wer, bleibt geheim.
       grantRole(s, a.playerId, a.role);
       makeMoment(s, ctx, 'quest_unlock', { secret: true, role: a.role, secretInfo: { recipient: a.playerId, role: a.role } });
-      break;
+      s.lastQuestReward = 'role';
+      return;
     }
-    case 'event':
-      pushEvent(s, ctx, 'quest_event', undefined, { eventKey: reward.eventKey });
-      break;
+    reward = rr.fallback;
   }
+  applyPlainReward(s, ctx, reward);
+  s.lastQuestReward = 'other';
 }
 
 /**
  * Beendet die Quest. Erfolgreich = alle Lebenden haben die Erfüllung bestätigt.
- * Das bloße Beenden/Abschließen erzeugt keine Belohnung; nur ausdrücklich konfigurierte Quests
- * (QuestDef.reward) lösen bei Erfolg etwas aus.
+ * Das bloße Beenden/Abschließen erzeugt keine Belohnung außer durch den Reward Director (erste erfolgreiche
+ * Quest) bzw. ausdrücklich konfigurierte Quests (QuestDef.reward).
  */
 function endQuest(s: GameState, ctx: Ctx): void {
   if (s.phase.kind !== 'day' || !s.phase.quest) return;
@@ -387,7 +415,7 @@ function endQuest(s: GameState, ctx: Ctx): void {
   const success = livingIds(s).every((id) => quest.doneBy.includes(id));
   s.phase.quest = null;
   pushEvent(s, ctx, 'quest_ended', undefined, { questId: quest.id, success });
-  if (success && def?.reward) applyQuestReward(s, ctx, def.reward);
+  if (success) applyQuestReward(s, ctx, def?.reward);
 }
 
 // ───────────────────────── Dorfrat ─────────────────────────

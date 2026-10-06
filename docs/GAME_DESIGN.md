@@ -1,5 +1,5 @@
 # DAS DORF – GAME DESIGN
-**Version 0.7 – kompakte Source of Truth** (v0.7: synchrone geheime Momente (Variante A), eine Sonderrolle pro Person, Verdachtsabgabe vor der Nacht, Beobachter/Ausschau, Alchemistin nur Heilung, öffentliche Aufdeckung, Profile; Details §24. v0.6: 4–14 Spieler, Kleingruppen 4–6 mit offener Balance, Grenzgänger standardmäßig deaktiviert, Kill-Frequenz konfigurierbar)
+**Version 0.7 – kompakte Source of Truth** (v0.7: Reward Director für Quest-Rollen (§25), synchrone geheime Momente (Variante A), eine Sonderrolle pro Person, Verdachtsabgabe vor der Nacht, Beobachter/Ausschau, Alchemistin nur Heilung, öffentliche Aufdeckung, Profile; Details §24. v0.6: 4–14 Spieler, Kleingruppen 4–6 mit offener Balance, Grenzgänger standardmäßig deaktiviert, Kill-Frequenz konfigurierbar)
 
 **Version 0.5** (Änderungen ggü. 0.3: Dorfrat ohne Nominierung/Verteidigung und ohne hartes Zeitlimit, Quest-Belohnungen, Grenzgänger inkl. Rudelstärke, konfigurierbare Sonderrollen, Rollen-Direktor ohne Ausgleichslogik, einfache Rollen-Momente, Nacht-Timing, Startwerte für Rudelgröße und Rollen)
 
@@ -293,7 +293,7 @@ Geeignete Kategorien:
 
 Wölfe spielen normal mit und können subtil sabotieren.
 
-**Belohnungen:** Das bloße Abschließen einer Quest erzeugt keine automatische Belohnung. Die meisten Quests haben gar keine spielmechanische Belohnung. Nur ausdrücklich dafür konfigurierte Quests können bei **erfolgreicher Erfüllung** einen Hinweis, ein Ereignis oder eine neue Sonderrolle auslösen. Was als „erfolgreich" gilt, ist je Quest definiert (aktueller Startwert: alle Lebenden bestätigen die Erfüllung vor Ablauf der Zeit).
+**Belohnungen:** Das bloße Abschließen einer Quest erzeugt keine automatische Belohnung, außer durch den Reward Director (§25: erste erfolgreiche Quest). Die meisten Quests haben sonst gar keine spielmechanische Belohnung. Nur ausdrücklich dafür konfigurierte Quests können bei **erfolgreicher Erfüllung** einen Hinweis, ein Ereignis oder eine neue Sonderrolle auslösen. Was als „erfolgreich" gilt, ist je Quest definiert (aktueller Startwert: alle Lebenden bestätigen die Erfüllung vor Ablauf der Zeit).
 
 ## 19. Überschneidungen
 Nie zwei verbindliche Aktionen gleichzeitig.
@@ -372,3 +372,14 @@ Aus den geheimen Verdachtsabgaben: „A hatte B seit Tag X im Verdacht", „Niem
 
 ### Jenseits-Nachrichten
 Nur als Quest-/Ereignis-Belohnung vorgesehen, **nicht umgesetzt**; Moderationsmethode offen (siehe OPEN_DECISIONS).
+
+## 25. Reward Director: Rollenfreischaltung durch Quests (v0.7)
+Alle Werte stehen in `Rules.roleRewards` bzw. `RoleDef` (`rules.ts`); nichts davon ist eine Stärke-/Difficulty-Logik, die Fraktionsführung fließt nirgends ein.
+
+1. **Erste erfolgreiche Quest:** schaltet – sofern eine zulässige Sonderrolle verfügbar und das Budget nicht ausgeschöpft ist – **garantiert genau eine** Sonderrolle frei (bewusste Dramaturgie: früh zusätzliche Unsicherheit). Gilt auch für Quests ohne konfigurierte Belohnung; ist für die Quest eine feste Rolle konfiguriert, wird diese bevorzugt. Das Tageslimit und die bestehenden Verteilungsregeln (Kombinationen, `maxLaterSpecials`) gelten weiter. Eine gescheiterte Quest zählt nicht.
+2. **Fallback:** Kann/darf keine Rolle vergeben werden (Pool leer, Budget, Tageslimit, kein Empfänger, Spielerzahl), greift die konfigurierte Nicht-Rollen-Belohnung (`roleRewards.fallback`, Startwert: Hinweis).
+3. **Nach der ersten Freischaltung** gemischtes System: Die direkt folgende erfolgreiche Quest vergibt keine Rolle (Fallback bzw. ihre sonstige Belohnung); jede andere Belohnungsart (Hinweis, Ereignis, Jenseits-Nachricht (später), keine Mechanik) unterbricht die Rollenserie. **Höchstens eine neue Sonderrolle pro Spieltag** (auch Rollen-Momente zählen; Startrollen nicht).
+4. **Gesamtbudget:** `floor(Startspieler / 2)` Sonderrollen je Partie (4→2, 5→2, 6→3, 8→4, 10→5, 14→7). Startrollen zählen mit, der Dorfsprecher nicht. **Obergrenze, kein Zielwert** – die Partie schöpft das Budget nicht zwanghaft aus.
+5. **Jede Rollenart höchstens einmal pro Partie** (`maxPerGame`, auch ausgeschiedene Träger zählen), höchstens eine Sonderrolle pro Person. Das ersetzt die frühere Wiedervergabe nach dem Tod des Trägers (per `maxPerGame: null` konfigurierbar).
+6. **Zeit-/Phasenpräferenzen:** Je Rolle ein Gewichtungsfaktor für früh/mittel/spät (`RoleDef.timing`; Phasengrenzen `roleRewards.phases`, tagesbasiert). Startwerte: Späher, Fährtenleser, Beobachter früh bevorzugt; Alchemistin und Wächter früh bis mittel; Jäger indifferent (später möglich, standardmäßig deaktiviert); Grenzgänger ausschließlich Startrolle.
+7. **Kleingruppen (4–6 Startspieler):** Die Freischaltung (erste Quest und weitere Vergaben) ist möglich, solange mindestens 4 Spieler leben (`roleRewards.smallGroup`); das hat Vorrang vor der ≤5‑Regel. Ab 7 Startspielern gilt weiter: bei ≤5 Lebenden keine neuen Sonderrollen. Budget und Verteilungsregeln gelten auch in Kleingruppen.

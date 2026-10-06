@@ -108,6 +108,8 @@ function role(def) {
     abilities: [],
     maxLivingHolders: 1,
     maxGrants: null,
+    maxPerGame: 1,
+    timing: { early: 1, mid: 1, late: 1 },
     announcedAtStart: false,
     ...def
   };
@@ -123,6 +125,7 @@ var DEFAULT_RULES = {
     villager: role({ id: "villager", faction: "village", special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     wolf: role({ id: "wolf", faction: "pack", special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     scout: role({
+      timing: { early: 2, mid: 1, late: 1 },
       id: "scout",
       faction: "village",
       weight: 1,
@@ -130,6 +133,7 @@ var DEFAULT_RULES = {
       abilities: [ab({ id: "scout", kind: "inspect", uses: 2 })]
     }),
     tracker: role({
+      timing: { early: 2, mid: 1, late: 1 },
       id: "tracker",
       faction: "village",
       weight: 2,
@@ -137,6 +141,7 @@ var DEFAULT_RULES = {
       abilities: [ab({ id: "track", kind: "inspect_group", uses: 1, groupSize: 3 })]
     }),
     guardian: role({
+      timing: { early: 2, mid: 2, late: 1 },
       id: "guardian",
       faction: "village",
       weight: 3,
@@ -144,6 +149,7 @@ var DEFAULT_RULES = {
       abilities: [ab({ id: "protect", kind: "protect", uses: null, noRepeatTarget: true, allowSelf: true })]
     }),
     alchemist: role({
+      timing: { early: 2, mid: 2, late: 1 },
       id: "alchemist",
       faction: "village",
       weight: 2,
@@ -172,6 +178,7 @@ var DEFAULT_RULES = {
       abilities: [ab({ id: "last_shot", kind: "last_shot", uses: 1 })]
     }),
     observer: role({
+      timing: { early: 2, mid: 1, late: 1 },
       id: "observer",
       faction: "village",
       weight: 1,
@@ -198,6 +205,16 @@ var DEFAULT_RULES = {
   maxLaterSpecials: { tiny: 1, small: 1, medium: 2, large: 3 },
   comboLimits: [{ roles: ["scout", "tracker"], max: { tiny: 1, small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
+  roleRewards: {
+    budgetDivisor: 2,
+    firstSuccessfulQuestGuaranteed: true,
+    noRoleRewardAfterRoleReward: true,
+    maxNewRolesPerDay: 1,
+    fallback: { kind: "hint" },
+    // Spielphasen und Timing-Faktoren der Rollen sind Startwerte (offen, siehe OPEN_DECISIONS).
+    phases: { earlyUntilDay: 2, midUntilDay: 4 },
+    smallGroup: { maxStartPlayers: 6, minAlive: 4 }
+  },
   moments: {
     after_first_council: { noRoleChance: 0.5 },
     day_start: { days: [3], noRoleChance: 0.5 }
@@ -255,17 +272,34 @@ var SPECIAL_ROLE_IDS = ROLE_IDS.filter((r) => DEFAULT_RULES.roles[r].special);
 
 // packages/engine/src/director.ts
 var living = (s) => Object.values(s.players).filter((p) => p.alive);
+var roleBudget = (playerCount, rules) => rules.roleRewards.budgetDivisor > 0 ? Math.floor(playerCount / rules.roleRewards.budgetDivisor) : Infinity;
+function gamePhase(day, rules) {
+  const p = rules.roleRewards.phases;
+  return day <= p.earlyUntilDay ? "early" : day <= p.midUntilDay ? "mid" : "late";
+}
+function assignedSpecials(s) {
+  const out = {};
+  for (const p of Object.values(s.players)) if (s.rules.roles[p.role].special) out[p.role] = (out[p.role] ?? 0) + 1;
+  return out;
+}
 function isRoleAllowed(def, ctx, rules) {
   if (!def.special || !def.enabled || def.weight <= 0) return false;
   const holders = ctx.held.filter((r) => r === def.id).length;
   if (def.maxLivingHolders !== null && holders >= def.maxLivingHolders) return false;
   if (def.maxGrants !== null && (ctx.grants?.[def.id] ?? 0) >= def.maxGrants) return false;
+  if (def.maxPerGame !== null && (ctx.assigned?.[def.id] ?? 0) >= def.maxPerGame) return false;
+  if (ctx.assigned && Object.values(ctx.assigned).reduce((a, b) => a + (b ?? 0), 0) >= roleBudget(ctx.playerCount, rules)) return false;
   if (ctx.playerCount < def.minPlayers) return false;
   if (def.maxPlayers !== null && ctx.playerCount > def.maxPlayers) return false;
   if (!def.unlock.triggers.includes(ctx.trigger)) return false;
   if (ctx.day < def.unlock.earliestDay) return false;
   if (def.unlock.latestDay !== null && ctx.day > def.unlock.latestDay) return false;
-  if (ctx.trigger !== "start" && rules.finaleAlive > 0 && ctx.aliveCount <= rules.finaleAlive) return false;
+  if (ctx.trigger !== "start") {
+    const sg = rules.roleRewards.smallGroup;
+    if (ctx.playerCount <= sg.maxStartPlayers) {
+      if (ctx.aliveCount < sg.minAlive) return false;
+    } else if (rules.finaleAlive > 0 && ctx.aliveCount <= rules.finaleAlive) return false;
+  }
   const band = sizeBand(ctx.playerCount);
   for (const combo of rules.comboLimits) {
     if (!combo.roles.includes(def.id)) continue;
@@ -283,12 +317,15 @@ function pickLateAssignment(s, trigger, rng, fixedRole) {
   const playerCount = s.playerCount;
   const band = sizeBand(playerCount);
   if (s.laterGrants >= rules.maxLaterSpecials[band]) return null;
+  if ((s.grantsByDay[s.day] ?? 0) >= rules.roleRewards.maxNewRolesPerDay) return null;
   const held = living(s).map((p) => p.role);
-  const ctx = { trigger, day: s.day, playerCount, held, grants: s.grantsByRole, aliveCount: living(s).length };
+  const ctx = { trigger, day: s.day, playerCount, held, grants: s.grantsByRole, aliveCount: living(s).length, assigned: assignedSpecials(s) };
   const candidates = Object.values(rules.roles).filter(
     (d) => (fixedRole ? d.id === fixedRole : true) && isRoleAllowed(d, ctx, rules) && recipients(s, d).length > 0
   );
-  const def = fixedRole ? candidates[0] ?? null : rng.weighted(candidates, (d) => d.weight);
+  const phase = gamePhase(s.day, rules);
+  const pool = candidates.filter((d) => d.timing[phase] > 0);
+  const def = fixedRole ? candidates[0] ?? null : rng.weighted(pool, (d) => d.weight * d.timing[phase]);
   if (!def) return null;
   return { playerId: rng.pick(recipients(s, def)), role: def.id };
 }
@@ -298,7 +335,8 @@ function assignStartRoles(playerIds, rules, rng, guaranteed = []) {
   let wolves = wolfCount(n, rules);
   const dist = rules.startSpecials[sizeBand(n)];
   const picked = rng.weighted(dist, (d) => d.weight);
-  const startCtx = (chosen2) => ({ trigger: "start", day: 1, playerCount: n, held: chosen2, aliveCount: n });
+  const assigned = (chosen2) => chosen2.reduce((a, r) => ({ ...a, [r]: (a[r] ?? 0) + 1 }), {});
+  const startCtx = (chosen2) => ({ trigger: "start", day: 1, playerCount: n, held: chosen2, aliveCount: n, assigned: assigned(chosen2) });
   const chosen = [];
   for (const r of guaranteed) {
     const def = rules.roles[r];
@@ -603,6 +641,7 @@ function grantRole(s, playerId, role2) {
   setRole(s, playerId, role2, s.day);
   addNote(s, playerId, s.day, "role_gained", { role: role2 });
   s.laterGrants += 1;
+  s.grantsByDay[s.day] = (s.grantsByDay[s.day] ?? 0) + 1;
   s.grantsByRole[role2] = (s.grantsByRole[role2] ?? 0) + 1;
 }
 function runMoment(s, ctx, trigger) {
@@ -675,6 +714,9 @@ function createGame(input) {
     playerCount: n,
     laterGrants: 0,
     grantsByRole: {},
+    grantsByDay: {},
+    questSuccesses: 0,
+    lastQuestReward: null,
     bwDecidedAnnounced: false,
     night: null,
     suspicions: [],
@@ -793,22 +835,37 @@ function startQuest(s, ctx) {
   };
   pushEvent(s, ctx, "quest_started", void 0, { questId: def.id });
 }
-function applyQuestReward(s, ctx, reward) {
-  switch (reward.kind) {
-    case "hint":
-      makeMoment(s, ctx, "hint", { secret: false, hint: true });
-      break;
-    case "unlock_role": {
-      const a = pickLateAssignment(s, "quest_reward", ctx.rng, reward.role);
-      if (!a) break;
+function applyPlainReward(s, ctx, reward) {
+  if (reward.kind === "hint") makeMoment(s, ctx, "hint", { secret: false, hint: true });
+  else pushEvent(s, ctx, "quest_event", void 0, { eventKey: reward.eventKey });
+}
+function applyQuestReward(s, ctx, configured) {
+  const rr = s.rules.roleRewards;
+  s.questSuccesses += 1;
+  const first = s.questSuccesses === 1;
+  let reward = configured;
+  if (first && rr.firstSuccessfulQuestGuaranteed) reward = { kind: "unlock_role", role: configured?.kind === "unlock_role" ? configured.role : void 0 };
+  if (!reward) {
+    s.lastQuestReward = "none";
+    return;
+  }
+  if (reward.kind === "unlock_role") {
+    const blocked = !first && rr.noRoleRewardAfterRoleReward && s.lastQuestReward === "role";
+    let a = null;
+    if (!blocked) {
+      a = pickLateAssignment(s, "quest_reward", ctx.rng, reward.role);
+      if (!a && first && reward.role) a = pickLateAssignment(s, "quest_reward", ctx.rng);
+    }
+    if (a) {
       grantRole(s, a.playerId, a.role);
       makeMoment(s, ctx, "quest_unlock", { secret: true, role: a.role, secretInfo: { recipient: a.playerId, role: a.role } });
-      break;
+      s.lastQuestReward = "role";
+      return;
     }
-    case "event":
-      pushEvent(s, ctx, "quest_event", void 0, { eventKey: reward.eventKey });
-      break;
+    reward = rr.fallback;
   }
+  applyPlainReward(s, ctx, reward);
+  s.lastQuestReward = "other";
 }
 function endQuest(s, ctx) {
   if (s.phase.kind !== "day" || !s.phase.quest) return;
@@ -817,7 +874,7 @@ function endQuest(s, ctx) {
   const success = livingIds(s).every((id) => quest.doneBy.includes(id));
   s.phase.quest = null;
   pushEvent(s, ctx, "quest_ended", void 0, { questId: quest.id, success });
-  if (success && def?.reward) applyQuestReward(s, ctx, def.reward);
+  if (success) applyQuestReward(s, ctx, def?.reward);
 }
 function startCouncil(s, ctx) {
   const nightAt = s.phase.kind === "day" ? s.phase.nightAt : null;
