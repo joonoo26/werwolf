@@ -1,0 +1,15 @@
+{
+  "name": "das-dorf",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "test": "npm run test -w @dorf/engine && npm run test:db",
+    "test:engine": "npm run test -w @dorf/engine",
+    "test:db": "bash scripts/test-db.sh",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build:functions": "node scripts/build-functions.mjs",
+    "check:functions": "node scripts/build-functions.mjs --check"
+  },
+  "engines": { "node": ">=20" }
+}
