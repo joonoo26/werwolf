@@ -1,0 +1,21 @@
+{
+  "name": "@dorf/db-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dorf/engine": "*",
+    "@dorf/server": "*"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.0",
+    "@types/node": "^22.0.0",
+    "pg": "^8.16.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
