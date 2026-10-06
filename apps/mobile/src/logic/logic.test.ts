@@ -38,3 +38,26 @@ describe('lock', () => {
     expect(normalizeCode(' ab-c d12e ')).toBe('ABCD12');
   });
 });
+
+import { mayShowAd } from './ads';
+import type { PublicView } from '@dorf/engine';
+
+const view = (over: Partial<PublicView>): PublicView => ({ phase: 'day', quest: null, councilReady: false, ...over } as PublicView);
+
+describe('Werbung', () => {
+  it('nie bei Werbefreiheit', () => {
+    expect(mayShowAd({ adFree: true, surface: 'phone', view: null })).toBe(false);
+  });
+  it('in der Lobby und nach Spielende auf dem Handy erlaubt', () => {
+    expect(mayShowAd({ adFree: false, surface: 'phone', view: null })).toBe(true);
+    expect(mayShowAd({ adFree: false, surface: 'phone', view: view({ phase: 'ended' }) })).toBe(true);
+  });
+  it('nie während einer aktiven Spielhandlung und nie auf der Dorfanzeige während der Partie', () => {
+    for (const phase of ['speaker_election', 'day', 'council', 'dusk', 'night', 'morning'] as const) {
+      expect(mayShowAd({ adFree: false, surface: 'phone', view: view({ phase }) })).toBe(false);
+      expect(mayShowAd({ adFree: false, surface: 'display', view: view({ phase }) })).toBe(false);
+    }
+    expect(mayShowAd({ adFree: false, surface: 'display', view: view({ phase: 'ended' }) })).toBe(false);
+    expect(mayShowAd({ adFree: false, surface: 'display', view: null })).toBe(false);
+  });
+});
