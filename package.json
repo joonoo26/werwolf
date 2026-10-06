@@ -14,7 +14,8 @@
     "build:functions": "node scripts/build-functions.mjs",
     "check:functions": "node scripts/build-functions.mjs --check",
     "lint:types": "npm run typecheck",
-    "balance:table": "node scripts/balance-table.mjs"
+    "balance:table": "node scripts/balance-table.mjs",
+    "simulate": "node scripts/simulate.mjs"
   },
   "engines": {
     "node": ">=20"

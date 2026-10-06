@@ -1,0 +1,1361 @@
+{
+ "games": 20000,
+ "sizes": [
+  6,
+  7,
+  8,
+  9,
+  10,
+  12,
+  14
+ ],
+ "results": [
+  {
+   "n": 6,
+   "cfg": "none",
+   "games": 20000,
+   "villageWins": 6686,
+   "sumRounds": 36703,
+   "rounds1": 3297,
+   "rounds2": 20000,
+   "sumAlive": 53280,
+   "sumPackStart": 20000,
+   "withSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "noSpecial": {
+    "games": 20000,
+    "villageWins": 6686
+   },
+   "byRole": {},
+   "roundsHist": {
+    "1": 3297,
+    "2": 16703
+   }
+  },
+  {
+   "n": 6,
+   "cfg": "bw_pack",
+   "games": 20000,
+   "villageWins": 1383,
+   "sumRounds": 26660,
+   "rounds1": 13340,
+   "rounds2": 20000,
+   "sumAlive": 68063,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 1383
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 1383
+    }
+   },
+   "roundsHist": {
+    "1": 13340,
+    "2": 6660
+   }
+  },
+  {
+   "n": 6,
+   "cfg": "director",
+   "games": 20000,
+   "villageWins": 8072,
+   "sumRounds": 36626,
+   "rounds1": 3374,
+   "rounds2": 20000,
+   "sumAlive": 54820,
+   "sumPackStart": 20000,
+   "withSpecial": {
+    "games": 10167,
+    "villageWins": 4767
+   },
+   "noSpecial": {
+    "games": 9833,
+    "villageWins": 3305
+   },
+   "byRole": {
+    "tracker": {
+     "games": 6811,
+     "villageWins": 3146
+    },
+    "scout": {
+     "games": 3356,
+     "villageWins": 1621
+    }
+   },
+   "roundsHist": {
+    "1": 3374,
+    "2": 16626
+   }
+  },
+  {
+   "n": 6,
+   "cfg": "bw_village",
+   "games": 20000,
+   "villageWins": 6522,
+   "sumRounds": 36743,
+   "rounds1": 3257,
+   "rounds2": 20000,
+   "sumAlive": 53036,
+   "sumPackStart": 20000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 6522
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 6522
+    }
+   },
+   "roundsHist": {
+    "1": 3257,
+    "2": 16743
+   }
+  },
+  {
+   "n": 6,
+   "cfg": "bw_pack_norepl",
+   "games": 20000,
+   "villageWins": 1362,
+   "sumRounds": 26656,
+   "rounds1": 13344,
+   "rounds2": 20000,
+   "sumAlive": 68050,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 1362
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 1362
+    }
+   },
+   "roundsHist": {
+    "1": 13344,
+    "2": 6656
+   }
+  },
+  {
+   "n": 6,
+   "cfg": "bw_village_norepl",
+   "games": 20000,
+   "villageWins": 6568,
+   "sumRounds": 36732,
+   "rounds1": 3268,
+   "rounds2": 20000,
+   "sumAlive": 53104,
+   "sumPackStart": 20000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 6568
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 6568
+    }
+   },
+   "roundsHist": {
+    "1": 3268,
+    "2": 16732
+   }
+  },
+  {
+   "n": 7,
+   "cfg": "none",
+   "games": 20000,
+   "villageWins": 5247,
+   "sumRounds": 49158,
+   "rounds1": 0,
+   "rounds2": 10842,
+   "sumAlive": 61684,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "noSpecial": {
+    "games": 20000,
+    "villageWins": 5247
+   },
+   "byRole": {},
+   "roundsHist": {
+    "2": 10842,
+    "3": 9158
+   }
+  },
+  {
+   "n": 7,
+   "cfg": "director",
+   "games": 20000,
+   "villageWins": 5752,
+   "sumRounds": 50830,
+   "rounds1": 0,
+   "rounds2": 9505,
+   "sumAlive": 59741,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 15280,
+    "villageWins": 4726
+   },
+   "noSpecial": {
+    "games": 4720,
+    "villageWins": 1026
+   },
+   "byRole": {
+    "tracker": {
+     "games": 6945,
+     "villageWins": 2314
+    },
+    "guardian": {
+     "games": 10270,
+     "villageWins": 2835
+    },
+    "scout": {
+     "games": 3419,
+     "villageWins": 1561
+    }
+   },
+   "roundsHist": {
+    "2": 9505,
+    "3": 10174,
+    "4": 307,
+    "5": 14
+   }
+  },
+  {
+   "n": 7,
+   "cfg": "bw_pack",
+   "games": 20000,
+   "villageWins": 4689,
+   "sumRounds": 51487,
+   "rounds1": 0,
+   "rounds2": 8513,
+   "sumAlive": 57026,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 4689
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 4689
+    }
+   },
+   "roundsHist": {
+    "2": 8513,
+    "3": 11487
+   }
+  },
+  {
+   "n": 7,
+   "cfg": "bw_village",
+   "games": 20000,
+   "villageWins": 5687,
+   "sumRounds": 51527,
+   "rounds1": 2786,
+   "rounds2": 5687,
+   "sumAlive": 56946,
+   "sumPackStart": 20000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 5687
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 5687
+    }
+   },
+   "roundsHist": {
+    "1": 2786,
+    "2": 2901,
+    "3": 14313
+   }
+  },
+  {
+   "n": 7,
+   "cfg": "bw_pack_norepl",
+   "games": 20000,
+   "villageWins": 838,
+   "sumRounds": 29794,
+   "rounds1": 11929,
+   "rounds2": 18277,
+   "sumAlive": 100412,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 838
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 838
+    }
+   },
+   "roundsHist": {
+    "1": 11929,
+    "2": 6348,
+    "3": 1723
+   }
+  },
+  {
+   "n": 7,
+   "cfg": "bw_village_norepl",
+   "games": 20000,
+   "villageWins": 987,
+   "sumRounds": 45261,
+   "rounds1": 0,
+   "rounds2": 14739,
+   "sumAlive": 69478,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 987
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 987
+    }
+   },
+   "roundsHist": {
+    "2": 14739,
+    "3": 5261
+   }
+  },
+  {
+   "n": 8,
+   "cfg": "none",
+   "games": 20000,
+   "villageWins": 3539,
+   "sumRounds": 52229,
+   "rounds1": 0,
+   "rounds2": 7771,
+   "sumAlive": 59081,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "noSpecial": {
+    "games": 20000,
+    "villageWins": 3539
+   },
+   "byRole": {},
+   "roundsHist": {
+    "2": 7771,
+    "3": 12229
+   }
+  },
+  {
+   "n": 8,
+   "cfg": "bw_village",
+   "games": 20000,
+   "villageWins": 12476,
+   "sumRounds": 51169,
+   "rounds1": 2551,
+   "rounds2": 6280,
+   "sumAlive": 70138,
+   "sumPackStart": 20000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 12476
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 12476
+    }
+   },
+   "roundsHist": {
+    "1": 2551,
+    "2": 3729,
+    "3": 13720
+   }
+  },
+  {
+   "n": 8,
+   "cfg": "director",
+   "games": 20000,
+   "villageWins": 6531,
+   "sumRounds": 51912,
+   "rounds1": 347,
+   "rounds2": 9054,
+   "sumAlive": 65897,
+   "sumPackStart": 37484,
+   "withSpecial": {
+    "games": 17632,
+    "villageWins": 6163
+   },
+   "noSpecial": {
+    "games": 2368,
+    "villageWins": 368
+   },
+   "byRole": {
+    "tracker": {
+     "games": 7133,
+     "villageWins": 2956
+    },
+    "alchemist": {
+     "games": 8648,
+     "villageWins": 2715
+    },
+    "guardian": {
+     "games": 10584,
+     "villageWins": 3562
+    },
+    "borderwalker": {
+     "games": 2516,
+     "villageWins": 1464
+    },
+    "scout": {
+     "games": 3515,
+     "villageWins": 1499
+    }
+   },
+   "roundsHist": {
+    "1": 347,
+    "2": 8707,
+    "3": 9672,
+    "4": 1235,
+    "5": 39
+   }
+  },
+  {
+   "n": 8,
+   "cfg": "bw_pack",
+   "games": 20000,
+   "villageWins": 2188,
+   "sumRounds": 51446,
+   "rounds1": 0,
+   "rounds2": 8554,
+   "sumAlive": 59296,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 2188
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 2188
+    }
+   },
+   "roundsHist": {
+    "2": 8554,
+    "3": 11446
+   }
+  },
+  {
+   "n": 8,
+   "cfg": "bw_pack_norepl",
+   "games": 20000,
+   "villageWins": 388,
+   "sumRounds": 29657,
+   "rounds1": 12505,
+   "rounds2": 17838,
+   "sumAlive": 101074,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 388
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 388
+    }
+   },
+   "roundsHist": {
+    "1": 12505,
+    "2": 5333,
+    "3": 2162
+   }
+  },
+  {
+   "n": 8,
+   "cfg": "bw_village_norepl",
+   "games": 20000,
+   "villageWins": 1234,
+   "sumRounds": 49281,
+   "rounds1": 0,
+   "rounds2": 10719,
+   "sumAlive": 62672,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 1234
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 1234
+    }
+   },
+   "roundsHist": {
+    "2": 10719,
+    "3": 9281
+   }
+  },
+  {
+   "n": 9,
+   "cfg": "none",
+   "games": 20000,
+   "villageWins": 2077,
+   "sumRounds": 71099,
+   "rounds1": 0,
+   "rounds2": 546,
+   "sumAlive": 57802,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "noSpecial": {
+    "games": 20000,
+    "villageWins": 2077
+   },
+   "byRole": {},
+   "roundsHist": {
+    "2": 546,
+    "3": 7809,
+    "4": 11645
+   }
+  },
+  {
+   "n": 9,
+   "cfg": "director",
+   "games": 20000,
+   "villageWins": 8831,
+   "sumRounds": 68611,
+   "rounds1": 258,
+   "rounds2": 1618,
+   "sumAlive": 64342,
+   "sumPackStart": 37776,
+   "withSpecial": {
+    "games": 17534,
+    "villageWins": 8089
+   },
+   "noSpecial": {
+    "games": 2466,
+    "villageWins": 742
+   },
+   "byRole": {
+    "shadowwolf": {
+     "games": 4275,
+     "villageWins": 1777
+    },
+    "tracker": {
+     "games": 6167,
+     "villageWins": 3656
+    },
+    "scout": {
+     "games": 3150,
+     "villageWins": 1687
+    },
+    "alchemist": {
+     "games": 7348,
+     "villageWins": 3157
+    },
+    "guardian": {
+     "games": 9219,
+     "villageWins": 3952
+    },
+    "borderwalker": {
+     "games": 2224,
+     "villageWins": 1494
+    }
+   },
+   "roundsHist": {
+    "1": 258,
+    "2": 1360,
+    "3": 8114,
+    "4": 10052,
+    "5": 213,
+    "6": 3
+   }
+  },
+  {
+   "n": 9,
+   "cfg": "bw_village",
+   "games": 20000,
+   "villageWins": 11082,
+   "sumRounds": 62275,
+   "rounds1": 2218,
+   "rounds2": 4425,
+   "sumAlive": 75450,
+   "sumPackStart": 20000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 11082
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 11082
+    }
+   },
+   "roundsHist": {
+    "1": 2218,
+    "2": 2207,
+    "3": 6657,
+    "4": 8918
+   }
+  },
+  {
+   "n": 9,
+   "cfg": "bw_pack",
+   "games": 20000,
+   "villageWins": 4370,
+   "sumRounds": 65976,
+   "rounds1": 0,
+   "rounds2": 1085,
+   "sumAlive": 68048,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 4370
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 4370
+    }
+   },
+   "roundsHist": {
+    "2": 1085,
+    "3": 11854,
+    "4": 7061
+   }
+  },
+  {
+   "n": 9,
+   "cfg": "bw_village_norepl",
+   "games": 20000,
+   "villageWins": 3383,
+   "sumRounds": 68954,
+   "rounds1": 0,
+   "rounds2": 1146,
+   "sumAlive": 62092,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 3383
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 3383
+    }
+   },
+   "roundsHist": {
+    "2": 1146,
+    "3": 8754,
+    "4": 10100
+   }
+  },
+  {
+   "n": 9,
+   "cfg": "bw_pack_norepl",
+   "games": 20000,
+   "villageWins": 1570,
+   "sumRounds": 54342,
+   "rounds1": 0,
+   "rounds2": 9476,
+   "sumAlive": 91316,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 1570
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 1570
+    }
+   },
+   "roundsHist": {
+    "2": 9476,
+    "3": 6706,
+    "4": 3818
+   }
+  },
+  {
+   "n": 10,
+   "cfg": "none",
+   "games": 20000,
+   "villageWins": 1611,
+   "sumRounds": 55822,
+   "rounds1": 0,
+   "rounds2": 9325,
+   "sumAlive": 89967,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "noSpecial": {
+    "games": 20000,
+    "villageWins": 1611
+   },
+   "byRole": {},
+   "roundsHist": {
+    "2": 9325,
+    "3": 5528,
+    "4": 5147
+   }
+  },
+  {
+   "n": 10,
+   "cfg": "director",
+   "games": 20000,
+   "villageWins": 3306,
+   "sumRounds": 61303,
+   "rounds1": 0,
+   "rounds2": 6516,
+   "sumAlive": 84621,
+   "sumPackStart": 57695,
+   "withSpecial": {
+    "games": 18278,
+    "villageWins": 3267
+   },
+   "noSpecial": {
+    "games": 1722,
+    "villageWins": 39
+   },
+   "byRole": {
+    "alchemist": {
+     "games": 8895,
+     "villageWins": 1614
+    },
+    "shadowwolf": {
+     "games": 5187,
+     "villageWins": 905
+    },
+    "tracker": {
+     "games": 7285,
+     "villageWins": 1760
+    },
+    "guardian": {
+     "games": 10972,
+     "villageWins": 2149
+    },
+    "scout": {
+     "games": 3721,
+     "villageWins": 808
+    },
+    "borderwalker": {
+     "games": 2305,
+     "villageWins": 796
+    }
+   },
+   "roundsHist": {
+    "2": 6516,
+    "3": 6767,
+    "4": 5656,
+    "5": 1021,
+    "6": 39,
+    "7": 1
+   }
+  },
+  {
+   "n": 10,
+   "cfg": "bw_village",
+   "games": 20000,
+   "villageWins": 3231,
+   "sumRounds": 69632,
+   "rounds1": 0,
+   "rounds2": 443,
+   "sumAlive": 63967,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 3231
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 3231
+    }
+   },
+   "roundsHist": {
+    "2": 443,
+    "3": 9482,
+    "4": 10075
+   }
+  },
+  {
+   "n": 10,
+   "cfg": "bw_pack",
+   "games": 20000,
+   "villageWins": 1391,
+   "sumRounds": 54579,
+   "rounds1": 0,
+   "rounds2": 9388,
+   "sumAlive": 92233,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 1391
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 1391
+    }
+   },
+   "roundsHist": {
+    "2": 9388,
+    "3": 6645,
+    "4": 3967
+   }
+  },
+  {
+   "n": 10,
+   "cfg": "bw_village_norepl",
+   "games": 20000,
+   "villageWins": 830,
+   "sumRounds": 52768,
+   "rounds1": 0,
+   "rounds2": 9811,
+   "sumAlive": 95294,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 830
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 830
+    }
+   },
+   "roundsHist": {
+    "2": 9811,
+    "3": 7610,
+    "4": 2579
+   }
+  },
+  {
+   "n": 10,
+   "cfg": "bw_pack_norepl",
+   "games": 20000,
+   "villageWins": 100,
+   "sumRounds": 30854,
+   "rounds1": 11994,
+   "rounds2": 17451,
+   "sumAlive": 138392,
+   "sumPackStart": 80000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 100
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 100
+    }
+   },
+   "roundsHist": {
+    "1": 11994,
+    "2": 5457,
+    "3": 2250,
+    "4": 299
+   }
+  },
+  {
+   "n": 12,
+   "cfg": "none",
+   "games": 20000,
+   "villageWins": 2450,
+   "sumRounds": 79749,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 82952,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "noSpecial": {
+    "games": 20000,
+    "villageWins": 2450
+   },
+   "byRole": {},
+   "roundsHist": {
+    "3": 6177,
+    "4": 7897,
+    "5": 5926
+   }
+  },
+  {
+   "n": 12,
+   "cfg": "bw_village",
+   "games": 20000,
+   "villageWins": 4663,
+   "sumRounds": 87330,
+   "rounds1": 0,
+   "rounds2": 285,
+   "sumAlive": 70003,
+   "sumPackStart": 40000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 4663
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 4663
+    }
+   },
+   "roundsHist": {
+    "2": 285,
+    "3": 787,
+    "4": 10241,
+    "5": 8687
+   }
+  },
+  {
+   "n": 12,
+   "cfg": "bw_pack",
+   "games": 20000,
+   "villageWins": 937,
+   "sumRounds": 75722,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 89493,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 937
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 937
+    }
+   },
+   "roundsHist": {
+    "3": 8941,
+    "4": 6396,
+    "5": 4663
+   }
+  },
+  {
+   "n": 12,
+   "cfg": "director",
+   "games": 20000,
+   "villageWins": 6179,
+   "sumRounds": 87288,
+   "rounds1": 0,
+   "rounds2": 40,
+   "sumAlive": 78335,
+   "sumPackStart": 56877,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 6179
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 3123,
+     "villageWins": 1371
+    },
+    "guardian": {
+     "games": 13370,
+     "villageWins": 4175
+    },
+    "alchemist": {
+     "games": 10786,
+     "villageWins": 3145
+    },
+    "scout": {
+     "games": 6566,
+     "villageWins": 2615
+    },
+    "shadowwolf": {
+     "games": 6478,
+     "villageWins": 1619
+    },
+    "tracker": {
+     "games": 10798,
+     "villageWins": 4448
+    }
+   },
+   "roundsHist": {
+    "2": 40,
+    "3": 4435,
+    "4": 5970,
+    "5": 7409,
+    "6": 2044,
+    "7": 102
+   }
+  },
+  {
+   "n": 12,
+   "cfg": "bw_village_norepl",
+   "games": 20000,
+   "villageWins": 1545,
+   "sumRounds": 79496,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 82553,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 1545
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 1545
+    }
+   },
+   "roundsHist": {
+    "3": 6547,
+    "4": 7410,
+    "5": 6043
+   }
+  },
+  {
+   "n": 12,
+   "cfg": "bw_pack_norepl",
+   "games": 20000,
+   "villageWins": 264,
+   "sumRounds": 58418,
+   "rounds1": 0,
+   "rounds2": 7229,
+   "sumAlive": 123428,
+   "sumPackStart": 80000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 264
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 264
+    }
+   },
+   "roundsHist": {
+    "2": 7229,
+    "3": 8065,
+    "4": 3765,
+    "5": 941
+   }
+  },
+  {
+   "n": 14,
+   "cfg": "none",
+   "games": 20000,
+   "villageWins": 1078,
+   "sumRounds": 83854,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 113370,
+   "sumPackStart": 80000,
+   "withSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "noSpecial": {
+    "games": 20000,
+    "villageWins": 1078
+   },
+   "byRole": {},
+   "roundsHist": {
+    "3": 6634,
+    "4": 6218,
+    "5": 3808,
+    "6": 3340
+   }
+  },
+  {
+   "n": 14,
+   "cfg": "director",
+   "games": 20000,
+   "villageWins": 3903,
+   "sumRounds": 98689,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 95000,
+   "sumPackStart": 76797,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 3903
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "scout": {
+     "games": 6819,
+     "villageWins": 1845
+    },
+    "tracker": {
+     "games": 11088,
+     "villageWins": 2926
+    },
+    "shadowwolf": {
+     "games": 6900,
+     "villageWins": 1089
+    },
+    "guardian": {
+     "games": 13574,
+     "villageWins": 2774
+    },
+    "alchemist": {
+     "games": 11108,
+     "villageWins": 2071
+    },
+    "borderwalker": {
+     "games": 3203,
+     "villageWins": 914
+    }
+   },
+   "roundsHist": {
+    "3": 3239,
+    "4": 4344,
+    "5": 5102,
+    "6": 5280,
+    "7": 1878,
+    "8": 153,
+    "9": 4
+   }
+  },
+  {
+   "n": 14,
+   "cfg": "bw_village",
+   "games": 20000,
+   "villageWins": 2338,
+   "sumRounds": 101242,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 79854,
+   "sumPackStart": 60000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 2338
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 2338
+    }
+   },
+   "roundsHist": {
+    "3": 72,
+    "4": 5788,
+    "5": 6966,
+    "6": 7174
+   }
+  },
+  {
+   "n": 14,
+   "cfg": "bw_pack",
+   "games": 20000,
+   "villageWins": 602,
+   "sumRounds": 80219,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 120164,
+   "sumPackStart": 80000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 602
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 602
+    }
+   },
+   "roundsHist": {
+    "3": 8224,
+    "4": 5435,
+    "5": 4239,
+    "6": 2102
+   }
+  },
+  {
+   "n": 14,
+   "cfg": "bw_village_norepl",
+   "games": 20000,
+   "villageWins": 1032,
+   "sumRounds": 88080,
+   "rounds1": 0,
+   "rounds2": 0,
+   "sumAlive": 104872,
+   "sumPackStart": 80000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 1032
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 1032
+    }
+   },
+   "roundsHist": {
+    "3": 3882,
+    "4": 7850,
+    "5": 4574,
+    "6": 3694
+   }
+  },
+  {
+   "n": 14,
+   "cfg": "bw_pack_norepl",
+   "games": 20000,
+   "villageWins": 96,
+   "sumRounds": 56081,
+   "rounds1": 0,
+   "rounds2": 10523,
+   "sumAlive": 167934,
+   "sumPackStart": 100000,
+   "withSpecial": {
+    "games": 20000,
+    "villageWins": 96
+   },
+   "noSpecial": {
+    "games": 0,
+    "villageWins": 0
+   },
+   "byRole": {
+    "borderwalker": {
+     "games": 20000,
+     "villageWins": 96
+    }
+   },
+   "roundsHist": {
+    "2": 10523,
+    "3": 5191,
+    "4": 2526,
+    "5": 1202,
+    "6": 558
+   }
+  }
+ ]
+}

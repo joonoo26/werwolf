@@ -909,7 +909,19 @@ export function applyCommand(
   cmd: Command,
   now: number,
 ): Result {
-  const s = JSON.parse(JSON.stringify(state)) as GameState;
+  return applyCommandMut(JSON.parse(JSON.stringify(state)) as GameState, actor, cmd, now);
+}
+
+/**
+ * Wie applyCommand, aber verändert den übergebenen Zustand direkt (ohne Kopie). NUR für Simulationen
+ * mit gültigen Befehlen gedacht; bei einem Fehler kann der Zustand teilweise verändert sein.
+ */
+export function applyCommandMut(
+  s: GameState,
+  actor: PlayerId | 'system',
+  cmd: Command,
+  now: number,
+): Result {
   const ctx: Ctx = { now, rng: new Rng(s.rng) };
   try {
     execute(s, actor, cmd, ctx);
