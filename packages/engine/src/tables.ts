@@ -30,7 +30,7 @@ export function describeBalance(rules: Rules, samples = 20000): BalanceRow[] {
       const { assignments } = assignStartRoles(ids, rules, rng);
       for (const a of assignments) if (rules.roles[a.role].special) hits[a.role] = (hits[a.role] ?? 0) + 1;
     }
-    const startCtx = { trigger: 'start' as const, day: 1, playerCount: n, assigned: [] as RoleId[], aliveCount: n };
+    const startCtx = { trigger: 'start' as const, day: 1, playerCount: n, held: [] as RoleId[], aliveCount: n };
     rows.push({
       players: n,
       wolves: wolfCount(n, rules),
@@ -41,7 +41,7 @@ export function describeBalance(rules: Rules, samples = 20000): BalanceRow[] {
         .map((d) => ({ role: d.id, weight: d.weight, pctOfGames: Math.round(((hits[d.id] ?? 0) / samples) * 100) })),
       maxLater: rules.maxLaterSpecials[band],
       laterRoles: defs
-        .map((d) => ({ d, trig: LATE.filter((t) => isRoleAllowed(d, { trigger: t, day: 2, playerCount: n, assigned: [], aliveCount: n }, rules)) }))
+        .map((d) => ({ d, trig: LATE.filter((t) => isRoleAllowed(d, { trigger: t, day: 2, playerCount: n, held: [], aliveCount: n }, rules)) }))
         .filter((x) => x.trig.length > 0)
         .map((x) => ({ role: x.d.id, weight: x.d.weight, triggers: x.trig })),
     });
@@ -55,7 +55,8 @@ export function describeAbility(a: AbilityDef): string {
     case 'inspect': return `${a.id}: prüft die Zugehörigkeit (Dorf/Rudel) einer Person, ${uses}`;
     case 'inspect_group': return `${a.id}: wählt ${a.groupSize} Personen, erfährt nur ob mindestens ein Rudelmitglied dabei ist, ${uses}`;
     case 'protect': return `${a.id}: schützt eine Person vor dem Rudelangriff, ${uses}${a.noRepeatTarget ? ', nicht dieselbe Person zwei Nächte in Folge' : ''}${a.allowSelf === false ? ', nicht sich selbst' : ''}`;
-    case 'strike': return `${a.id}: lässt eine Person ausscheiden (nicht durch Schutz verhinderbar), ${uses}`;
+    case 'heal': return `${a.id}: rettet das vom Rudel gewählte Opfer (nach der Rudelsperre), ${uses}`;
+    case 'observe': return `${a.id}: Beobachtungsfenster (max. ${(a.windowMs ?? 0) / 1000} s, jede Nacht), erhält einen wahren, möglichst nicht eindeutigen Hinweis auf ein Rudelmitglied`;
     case 'veil': return `${a.id}: Informationsergebnisse dieser Nacht werden „unklar", ${uses}`;
     case 'last_shot': return `${a.id}: nach dem Ausscheiden eine letzte Aktion auf eine lebende Person, ${uses}`;
   }

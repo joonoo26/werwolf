@@ -13,7 +13,7 @@ export const CONFIG_LABELS: Record<ConfigId, string> = {
 };
 
 const ALL_BANDS = (v: unknown) => ({ tiny: v, small: v, medium: v, large: v });
-const OTHERS = ['scout', 'tracker', 'alchemist', 'guardian', 'hunter', 'shadowwolf'];
+const OTHERS = ['scout', 'tracker', 'alchemist', 'guardian', 'hunter', 'shadowwolf', 'observer'];
 
 export function rulesFor(cfg: ConfigId): { rules: DeepPartial<Rules> | undefined; bwChoice?: 'village' | 'pack' } {
   switch (cfg) {

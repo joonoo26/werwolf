@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, tick } from '../src/engine';
 import { privateView, publicView } from '../src/views';
-import { alive, advanceTo, electSpeaker, forceNight, must, newGame, T0, withRoles } from './helpers';
+import { alive, advanceTo, electSpeaker, endNight, forceNight, must, newGame, T0, withRoles } from './helpers';
 import type { GameState, RoleId } from '../src/types';
 
 /** n=10: p1,p2 Wölfe; Rest gemäß roles. Führt Wahl, erzwingt Tag→Dorfrat… bis Nacht. */
@@ -20,7 +20,7 @@ describe('Rudelziel', () => {
     s = must(s, 'p1', { type: 'pack_target', target: 'p5' }, T0 + 5_000_000);
     s = must(s, 'p2', { type: 'pack_target', target: 'p5' }, T0 + 5_000_000);
     s = must(s, 'p3', { type: 'pack_target', target: 'p6' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(s.phase.kind).toBe('morning');
     expect(s.players.p5!.alive).toBe(false);
     expect(s.players.p6!.alive).toBe(true);
@@ -31,7 +31,7 @@ describe('Rudelziel', () => {
     s = must(s, 'p1', { type: 'pack_target', target: 'p5' }, T0 + 2);
     s = must(s, 'p2', { type: 'pack_target', target: 'p5' }, T0 + 2);
     s = forceNight(s);
-    s = tick(s, T0 + 20_000_000);
+    s = endNight(s, T0 + 20_000_000);
     expect(s.players.p5!.alive).toBe(false);
   });
   it('wird das vorbereitete Ziel verbannt, muss das Rudel neu wählen (Stimme verfällt)', () => {
@@ -52,7 +52,7 @@ describe('Rudelziel', () => {
   it('ohne gültige Stimme wählt der Server zufällig ein zulässiges Ziel – nie ein Rudelmitglied', () => {
     for (let i = 0; i < 25; i++) {
       let s = toNight({}, 10, `rand${i}`);
-      s = tick(s, T0 + 9_000_000);
+      s = endNight(s, T0 + 9_000_000);
       const dead = Object.values(s.players).filter((p) => !p.alive);
       expect(dead).toHaveLength(1);
       expect(dead[0]!.faction).toBe('village');
@@ -78,35 +78,17 @@ describe('Schutz', () => {
     let s = toNight({ p3: 'guardian' });
     s = must(s, 'p1', { type: 'pack_target', target: 'p5' }, T0 + 5_000_000);
     s = must(s, 'p3', { type: 'night_action', ability: 'protect', target: 'p5' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(alive(s)).toHaveLength(10);
     expect(publicView(s).morningDeaths).toEqual([]);
   });
   it('Wächter darf dieselbe Person nicht zwei Nächte in Folge schützen', () => {
     let s = toNight({ p3: 'guardian' });
     s = must(s, 'p3', { type: 'night_action', ability: 'protect', target: 'p5' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     s = forceNight(s, T0 + 20_000_000);
     expect(night(s, 'p3', { type: 'night_action', ability: 'protect', target: 'p5' }, T0 + 20_000_000).ok).toBe(false);
     expect(night(s, 'p3', { type: 'night_action', ability: 'protect', target: 'p6' }, T0 + 20_000_000).ok).toBe(true);
-  });
-  it('Alchemistin: Schutztrank ist einmalig', () => {
-    let s = toNight({ p3: 'alchemist' });
-    s = must(s, 'p1', { type: 'pack_target', target: 'p5' }, T0 + 5_000_000);
-    s = must(s, 'p3', { type: 'night_action', ability: 'potion_protect', target: 'p5' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
-    expect(s.players.p5!.alive).toBe(true);
-    expect(s.players.p3!.uses.potion_protect).toBe(0);
-    s = forceNight(s, T0 + 30_000_000);
-    expect(night(s, 'p3', { type: 'night_action', ability: 'potion_protect', target: 'p6' }, T0 + 30_000_000).ok).toBe(false);
-  });
-  it('Alchemistin: offensiver Trank wirkt trotz Schutz und ist einmalig', () => {
-    let s = toNight({ p3: 'alchemist', p4: 'guardian' });
-    s = must(s, 'p3', { type: 'night_action', ability: 'potion_strike', target: 'p5' }, T0 + 5_000_000);
-    s = must(s, 'p4', { type: 'night_action', ability: 'protect', target: 'p5' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
-    expect(s.players.p5!.alive).toBe(false);
-    expect(s.players.p3!.uses.potion_strike).toBe(0);
   });
 });
 
@@ -114,7 +96,7 @@ describe('Informationsrollen', () => {
   it('Späher erfährt die Zugehörigkeit, begrenzt auf wenige Nutzungen', () => {
     let s = toNight({ p3: 'scout' });
     s = must(s, 'p3', { type: 'night_action', ability: 'scout', target: 'p1' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     const notes = privateView(s, 'p3')!.notes.filter((n) => n.kind === 'inspect_result');
     expect(notes).toHaveLength(1);
     expect(notes[0]!.data).toMatchObject({ target: 'p1', faction: 'pack' });
@@ -131,7 +113,7 @@ describe('Informationsrollen', () => {
   it('Fährtenleser erfährt nur, ob mindestens ein Wolf in der Gruppe ist', () => {
     let s = toNight({ p3: 'tracker' });
     s = must(s, 'p3', { type: 'night_action', ability: 'track', targets: ['p1', 'p4', 'p5'] }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     const n = privateView(s, 'p3')!.notes.find((x) => x.kind === 'group_result')!;
     expect(n.data).toMatchObject({ packPresent: true });
     expect(JSON.stringify(n.data)).not.toContain('"p1":'); // keine Einzelzuordnung
@@ -145,7 +127,7 @@ describe('Informationsrollen', () => {
     let s = toNight({ p3: 'scout', p4: 'shadowwolf' });
     s = must(s, 'p3', { type: 'night_action', ability: 'scout', target: 'p1' }, T0 + 5_000_000);
     s = must(s, 'p4', { type: 'night_action', ability: 'veil' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     const n = privateView(s, 'p3')!.notes.find((x) => x.kind === 'inspect_result')!;
     expect(n.data.unclear).toBe(true);
     expect(n.data.faction).toBeUndefined();
@@ -164,20 +146,20 @@ describe('Jäger', () => {
   it('Ausgeschiedener Jäger kann im Ergebnisfenster einen letzten Schuss abgeben – wirksam erst am Fensterende', () => {
     let s = toNight({ p3: 'hunter' });
     s = must(s, 'p1', { type: 'pack_target', target: 'p3' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(s.phase.kind).toBe('morning');
     expect(s.players.p3!.alive).toBe(false);
     s = must(s, 'p3', { type: 'hunter_shoot', target: 'p5' }, T0 + 9_000_100);
     expect(s.players.p5!.alive).toBe(true); // Timing verrät nichts
     for (const p of alive(s)) s = must(s, p.id, { type: 'ready', topic: 'advance', value: true }, T0 + 9_000_200);
     expect(s.players.p5!.alive).toBe(true); // Mindestdauer des Morgens gilt für alle gleich
-    s = tick(s, T0 + 9_000_000 + s.rules.durations.morningMs + 1);
+    s = tick(s, (s.phase.kind === 'morning' ? s.phase.startedAt : 0) + s.rules.durations.morningMs + 1);
     expect(s.players.p5!.alive).toBe(false);
   });
   it('Ein anderer Ausgeschiedener darf nicht schießen', () => {
     let s = toNight({ p3: 'hunter' });
     s = must(s, 'p1', { type: 'pack_target', target: 'p4' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(applyCommand(s, 'p4', { type: 'hunter_shoot', target: 'p5' }, T0 + 9_000_100).ok).toBe(false);
   });
 });
@@ -214,7 +196,7 @@ describe('Ausgeschiedene', () => {
   it('stimmen nicht ab, lösen keinen Dorfrat aus, nutzen keine Fähigkeiten', () => {
     let s = toNight({ p3: 'scout' });
     s = must(s, 'p1', { type: 'pack_target', target: 'p3' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(s.players.p3!.alive).toBe(false);
     for (const cmd of [
       { type: 'ready', topic: 'council', value: true },
@@ -224,5 +206,76 @@ describe('Ausgeschiedene', () => {
     ] as const) {
       expect(applyCommand(s, 'p3', cmd, T0 + 9_000_001).ok).toBe(false);
     }
+  });
+});
+
+describe('Alchemistin: ausschließlich ein einmaliger Heiltrank', () => {
+  /** Handlungsphase → Rudelsperre: ab jetzt steht das Opfer fest. */
+  function lockedNight(target = 'p5') {
+    let s = toNight({ p3: 'alchemist' });
+    s = must(s, 'p1', { type: 'pack_target', target }, T0 + 5_000_000);
+    s = tick(s, T0 + 5_000_000 + s.rules.durations.nightMs + 1);
+    return s;
+  }
+  it('Rudelwahl ist bis zur Sperre änderbar und danach endgültig', () => {
+    let s = toNight({ p3: 'alchemist' });
+    s = must(s, 'p1', { type: 'pack_target', target: 'p5' }, T0 + 5_000_000);
+    s = must(s, 'p1', { type: 'pack_target', target: 'p6' }, T0 + 5_000_001);
+    s = tick(s, T0 + 5_000_000 + s.rules.durations.nightMs + 1);
+    expect(s.phase.kind === 'night' && s.phase.stage).toBe('heal');
+    expect(s.night!.lockedTarget).toBe('p6');
+    expect(applyCommand(s, 'p1', { type: 'pack_target', target: 'p7' }, T0 + 6_000_000).ok).toBe(false);
+  });
+  it('nach der Sperre erhalten alle denselben neutralen Moment; nur die Alchemistin sieht das Opfer', () => {
+    const s = lockedNight('p5');
+    expect(s.moment).toMatchObject({ kind: 'pack_decided', secret: true });
+    expect(publicView(s).moment).not.toHaveProperty('victim');
+    const panels = Object.keys(s.players).map((id) => privateView(s, id)!.panel!);
+    expect(panels.every((p) => p.momentId === s.moment!.id)).toBe(true);
+    const heal = panels.filter((p) => p.kind === 'heal_prompt');
+    expect(heal).toHaveLength(1);
+    expect(privateView(s, 'p3')!.panel).toMatchObject({ kind: 'heal_prompt', victim: 'p5', decided: null });
+    expect(JSON.stringify(privateView(s, 'p4')!)).not.toContain('p5"');
+  });
+  it('Retten verhindert den Tod und verbraucht den Trank; Nicht eingreifen nicht', () => {
+    let s = lockedNight('p5');
+    s = must(s, 'p3', { type: 'heal_decision', save: true }, T0 + 6_000_000);
+    s = tick(s, T0 + 6_000_000 + s.rules.durations.healWindowMs);
+    expect(s.phase.kind).toBe('morning');
+    expect(s.players.p5!.alive).toBe(true);
+    expect(s.players.p3!.uses.potion_heal).toBe(0);
+
+    let t = lockedNight('p5');
+    t = must(t, 'p3', { type: 'heal_decision', save: false }, T0 + 6_000_000);
+    t = tick(t, T0 + 6_000_000 + t.rules.durations.healWindowMs);
+    expect(t.players.p5!.alive).toBe(false);
+    expect(t.players.p3!.uses.potion_heal).toBe(1);
+  });
+  it('Entscheidung ist endgültig; ohne Entscheidung gilt nach dem Fenster „nicht eingreifen" (Timeout-Fallback)', () => {
+    let s = lockedNight('p5');
+    s = must(s, 'p3', { type: 'heal_decision', save: false }, T0 + 6_000_000);
+    expect(applyCommand(s, 'p3', { type: 'heal_decision', save: true }, T0 + 6_000_001).ok).toBe(false);
+    const idle = tick(lockedNight('p5'), T0 + 5_000_000 + 150_000 + 40_000 + 5);
+    expect(idle.phase.kind).toBe('morning');
+    expect(idle.players.p5!.alive).toBe(false);
+  });
+  it('Das Nachtresultat läuft erst nach dem Heil-Fenster weiter – das Fenster ist auch ohne Alchemistin gleich lang', () => {
+    let s = toNight({});
+    s = must(s, 'p1', { type: 'pack_target', target: 'p5' }, T0 + 5_000_000);
+    s = tick(s, T0 + 5_000_000 + s.rules.durations.nightMs + 1);
+    if (s.phase.kind !== 'night') throw new Error('x');
+    expect(s.phase.stage).toBe('heal');
+    expect(s.phase.endsAt - (T0 + 5_000_000 + s.rules.durations.nightMs + 1)).toBe(s.rules.durations.healWindowMs);
+    expect(Object.values(s.players).every((p) => privateView(s, p.id)!.heal === null)).toBe(true);
+  });
+  it('Nur Heiltrank: es gibt keinen Angriffstrank und nur einen Einsatz pro Partie', () => {
+    const s = lockedNight('p5');
+    expect(s.players.p3!.uses).toEqual({ potion_heal: 1 });
+    expect(applyCommand(s, 'p4', { type: 'heal_decision', save: true }, T0 + 6_000_000).ok).toBe(false);
+    expect(applyCommand(s, 'p3', { type: 'night_action', ability: 'potion_strike', target: 'p6' }, T0 + 6_000_000).ok).toBe(false);
+  });
+  it('Nachtaktionen der Handlungsphase sind nach der Rudelsperre nicht mehr möglich', () => {
+    const s = lockedNight('p5');
+    expect(applyCommand(s, 'p3', { type: 'night_action', ability: 'potion_heal', target: 'p6' }, T0 + 6_000_000).ok).toBe(false);
   });
 });

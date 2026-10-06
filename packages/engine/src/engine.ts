@@ -1,9 +1,10 @@
 // Zustandsmaschine von DAS DORF. Reine Funktionen: (state, actor, command, now) → neuer state.
 // Kein I/O, keine Uhr, kein globaler Zufall → vollständig simulier- und testbar.
 import { assignStartRoles, pickLateAssignment } from './director';
-import { HINT_IMPULSE_KEYS, NEUTRAL_CHANGE_IMPULSE, QUESTS } from './content';
+import { HINT_IMPULSE_KEYS, QUESTS } from './content';
+import { defaultProfile, pickStatement } from './traits';
 import { Rng, seedToState } from './rng';
-import { mergeRules } from './rules';
+import { mergeRules, wolfCount } from './rules';
 import { planDay } from './schedule';
 import type {
   Command,
@@ -12,6 +13,11 @@ import type {
   EventKind,
   Faction,
   GameState,
+  MomentKind,
+  MomentSecret,
+  ObserverState,
+  Profile,
+  RoleMode,
   AbilityChoice,
   AbilityDef,
   NoteKind,
@@ -103,35 +109,54 @@ function setRole(s: GameState, id: PlayerId, role: RoleId, day: number): void {
   p.sidePending = def.startChoice;
 }
 
-function setImpulse(s: GameState, ctx: Ctx, kind: 'change' | 'hint'): void {
-  let textKey: string;
-  if (kind === 'change') {
-    textKey = NEUTRAL_CHANGE_IMPULSE;
-  } else {
+/**
+ * Erzeugt einen synchronen öffentlichen Moment. Alle Geräte zeigen ihn gleichzeitig (gleiche Dauer).
+ * Bei `secret` gibt es auf dem Screen für jeden Spieler denselben PIN-geschützten privaten Bereich.
+ */
+function makeMoment(
+  s: GameState,
+  ctx: Ctx,
+  kind: MomentKind,
+  opts: { secret: boolean; role?: RoleId; announced?: RoleId[]; hint?: boolean; secretInfo?: Omit<MomentSecret, 'momentId'> } ,
+): void {
+  const id = (s.moment?.id ?? 0) + 1;
+  const m: GameState['moment'] = { id, kind, at: ctx.now, showUntil: ctx.now + s.rules.durations.momentMs, secret: opts.secret };
+  if (opts.role) m.role = opts.role;
+  if (opts.announced?.length) m.announced = opts.announced;
+  if (opts.hint) {
     const unused = HINT_IMPULSE_KEYS.filter((k) => !s.usedImpulseKeys.includes(k));
     const pool = unused.length > 0 ? unused : HINT_IMPULSE_KEYS;
     if (unused.length === 0) s.usedImpulseKeys = [];
-    textKey = ctx.rng.pick(pool);
-    s.usedImpulseKeys.push(textKey);
+    m.textKey = ctx.rng.pick(pool);
+    s.usedImpulseKeys.push(m.textKey);
   }
-  // Auch bei Rollenvergabe bekommen alle einen echten Hinweis zusätzlich zum allgemeinen Impuls.
-  s.impulse = { id: (s.impulse?.id ?? 0) + 1, kind, textKey, at: ctx.now, showUntil: ctx.now + s.rules.durations.impulseMs };
-  pushEvent(s, ctx, 'impulse', undefined, { kind });
+  s.moment = m;
+  s.momentSecret = opts.secret ? { momentId: id, recipient: null, role: null, ...opts.secretInfo } : null;
+  pushEvent(s, ctx, 'moment', undefined, { kind, role: opts.role });
+}
+
+/** Vergibt eine Sonderrolle (höchstens eine pro Spieler) und zählt die Vergabe. */
+function grantRole(s: GameState, playerId: PlayerId, role: RoleId): void {
+  setRole(s, playerId, role, s.day);
+  addNote(s, playerId, s.day, 'role_gained', { role });
+  s.laterGrants += 1;
+  s.grantsByRole[role] = (s.grantsByRole[role] ?? 0) + 1;
 }
 
 /**
- * Rollen-Moment (vorab definierte Zeitpunkte). Der allgemeine Dorfimpuls erscheint bei JEDEM Moment,
- * unabhängig davon, ob eine Rolle vergeben wird – niemand kann am Impuls erkennen, ob etwas vergeben wurde.
+ * Neutraler Rollen-Moment (vorab definierte Zeitpunkte). Der Moment erscheint IMMER; ob dabei eine Rolle
+ * vergeben wird, entscheidet allein `noRoleChance`. Der Moment verrät es nicht: alle haben denselben
+ * Screen und dieselbe PIN-Interaktion.
  */
-function runMoment(s: GameState, ctx: Ctx, trigger: Exclude<Trigger, 'start'>): void {
+function runMoment(s: GameState, ctx: Ctx, trigger: 'after_first_council' | 'day_start'): void {
   const m = s.rules.moments[trigger];
   if (m.days && !m.days.includes(s.day)) return;
-  setImpulse(s, ctx, 'change');
+  makeMoment(s, ctx, 'neutral', { secret: true });
   if (ctx.rng.chance(m.noRoleChance)) return;
   const a = pickLateAssignment(s, trigger, ctx.rng);
   if (!a) return;
-  setRole(s, a.playerId, a.role, s.day);
-  addNote(s, a.playerId, s.day, 'role_gained', { role: a.role });
+  grantRole(s, a.playerId, a.role);
+  s.momentSecret = { momentId: s.moment!.id, recipient: a.playerId, role: a.role };
 }
 
 /** Spieler scheidet aus: sofort aus allem aktiven Spiel heraus (GAME_DESIGN §12). */
@@ -155,6 +180,15 @@ function eliminate(s: GameState, ctx: Ctx, id: PlayerId): void {
 
 export function createGame(input: StartInput): GameState {
   const rules = mergeRules(input.rules);
+  const guaranteed: RoleId[] = [];
+  for (const [role, mode] of Object.entries(input.roleModes ?? {}) as [RoleId, RoleMode][]) {
+    if (!rules.roles[role] || !rules.roles[role].special) continue;
+    if (mode === 'off') rules.roles[role].enabled = false;
+    else {
+      rules.roles[role].enabled = true;
+      if (mode === 'guaranteed') guaranteed.push(role);
+    }
+  }
   const n = input.roster.length;
   if (n < rules.minPlayers || n > rules.maxPlayers) {
     throw new Error(`Spielerzahl ${n} außerhalb von ${rules.minPlayers}–${rules.maxPlayers}`);
@@ -164,7 +198,7 @@ export function createGame(input: StartInput): GameState {
 
   const rng = new Rng(seedToState(input.seed));
   const ids = input.roster.map((r) => r.id);
-  const { assignments, startSpecialCount } = assignStartRoles(ids, rules, rng);
+  const { assignments, startSpecialCount } = assignStartRoles(ids, rules, rng, guaranteed);
   const seats = rng.shuffle(ids);
 
   const s: GameState = {
@@ -190,8 +224,16 @@ export function createGame(input: StartInput): GameState {
     usedQuestIds: [],
     usedImpulseKeys: [],
     startSpecialCount,
+    packSeats: wolfCount(n, rules),
+    playerCount: n,
+    laterGrants: 0,
+    grantsByRole: {},
+    bwDecidedAnnounced: false,
+    night: null,
+    suspicions: [],
     firstCouncilDone: false,
-    impulse: null,
+    moment: null,
+    momentSecret: null,
     events: [],
     nextEventId: 1,
     nextNoteId: 1,
@@ -206,6 +248,7 @@ export function createGame(input: StartInput): GameState {
       alive: true,
       role: 'villager',
       faction: 'village',
+      profile: r.profile ?? defaultProfile(r.id),
       roleSince: 1,
       uses: initialUses('villager', rules),
       lastTarget: {},
@@ -219,7 +262,8 @@ export function createGame(input: StartInput): GameState {
 
   const ctx: Ctx = { now: input.now, rng };
   pushEvent(s, ctx, 'game_started');
-  setImpulse(s, ctx, 'change');
+  const announced = (Object.values(s.players).map((p) => p.role).filter((r) => rules.roles[r].announcedAtStart)) as RoleId[];
+  makeMoment(s, ctx, 'start', { secret: true, announced: [...new Set(announced)] });
   startDay(s, ctx);
   s.rng = rng.state();
   return s;
@@ -315,12 +359,16 @@ function startQuest(s: GameState, ctx: Ctx): void {
 function applyQuestReward(s: GameState, ctx: Ctx, reward: QuestRewardDef): void {
   switch (reward.kind) {
     case 'hint':
-      setImpulse(s, ctx, 'hint');
+      makeMoment(s, ctx, 'hint', { secret: false, hint: true });
       break;
-    case 'role':
-      // Moment mit konfigurierter Wahrscheinlichkeit; der Impuls erscheint immer, die Vergabe bleibt unsichtbar.
-      runMoment(s, ctx, 'quest_reward');
+    case 'unlock_role': {
+      // Ausdrücklich konfigurierte Freischaltung: öffentlich bekannt, dass jemand diese Fähigkeit erhält.
+      const a = pickLateAssignment(s, 'quest_reward', ctx.rng, reward.role);
+      if (!a) break; // kein geeigneter Empfänger: keine Freischaltung, keine Ansage
+      grantRole(s, a.playerId, a.role);
+      makeMoment(s, ctx, 'quest_unlock', { secret: true, role: a.role, secretInfo: { recipient: a.playerId, role: a.role } });
       break;
+    }
     case 'event':
       pushEvent(s, ctx, 'quest_event', undefined, { eventKey: reward.eventKey });
       break;
@@ -501,13 +549,25 @@ function proceed(s: GameState, ctx: Ctx, which: 'after_council' | 'after_night')
   }
 }
 
+/** Grenzgänger-Entscheidung (oder Standard bei Fristablauf): einmaliger synchroner Moment, Wahl bleibt geheim. */
+function finalizeBorderwalker(s: GameState, ctx: Ctx, id: PlayerId, faction: Faction): void {
+  const p = s.players[id]!;
+  p.sidePending = false;
+  p.faction = faction;
+  if (!s.bwDecidedAnnounced) {
+    s.bwDecidedAnnounced = true;
+    makeMoment(s, ctx, 'borderwalker_decided', { secret: true, secretInfo: { recipient: id, role: p.role, faction } });
+  }
+}
+
 function startNight(s: GameState, ctx: Ctx): void {
-  for (const p of Object.values(s.players)) if (p.alive && p.sidePending) p.sidePending = false;
+  for (const p of Object.values(s.players)) if (p.alive && p.sidePending) finalizeBorderwalker(s, ctx, p.id, 'village');
   s.readyAdvance = [];
   s.readyCouncil = [];
   s.majorityAt = null;
   s.nightActions = {};
-  s.phase = { kind: 'night', startedAt: ctx.now, endsAt: ctx.now + s.rules.durations.nightMs };
+  s.night = { lockedTarget: null, healSave: null, lookoutUsed: false, observers: {} };
+  s.phase = { kind: 'night', startedAt: ctx.now, endsAt: ctx.now + s.rules.durations.nightMs, stage: 'act' };
   pushEvent(s, ctx, 'night_began');
 }
 
@@ -533,12 +593,32 @@ const consume = (p: PlayerState, a: AbilityDef): void => {
 };
 
 /**
+ * Ende der Handlungsphase: Die Rudelwahl wird endgültig gesperrt (kann danach nicht mehr verändert werden).
+ * Alle Spieler erhalten gleichzeitig denselben neutralen Moment; nur die Alchemistin sieht im privaten Bereich
+ * das Opfer. Das Heil-Fenster ist für alle gleich lang (auch ohne Alchemistin), damit das Timing nichts verrät.
+ */
+function lockPack(s: GameState, ctx: Ctx): void {
+  if (s.phase.kind !== 'night' || !s.night) return;
+  const interval = Math.max(1, s.rules.nightKillInterval[s.playerCount] ?? 1);
+  const killNight = (s.day - 1) % interval === 0;
+  s.night.lockedTarget = killNight ? resolvePackTarget(s, ctx) : null;
+  for (const o of Object.values(s.night.observers)) o.open = false;
+  const alchemist = livingPlayers(s).find((p) => abilitiesOf(s, p).some((a) => a.kind === 'heal' && hasUses(p, a)));
+  s.phase = { kind: 'night', startedAt: s.phase.startedAt, endsAt: ctx.now + s.rules.durations.healWindowMs, stage: 'heal' };
+  makeMoment(s, ctx, 'pack_decided', {
+    secret: true,
+    secretInfo: { recipient: s.night.lockedTarget && alchemist ? alchemist.id : null, role: null, victim: s.night.lockedTarget ?? undefined },
+  });
+}
+
+/**
  * Nachtauflösung, vollständig aus den Fähigkeits-Definitionen der Rollen (Rules.roles) abgeleitet.
- * Reihenfolge: Schleier → Informationen → Schutz → Angriff; Rudelangriff wird nur durch Schutz verhindert.
+ * Reihenfolge: Schleier → Informationen → Schutz/Heilung. Das Rudelopfer steht seit der Rudel-Sperre fest
+ * (`night.lockedTarget`); es wird nur durch Schutz oder den Heiltrank verhindert.
  */
 function resolveNight(s: GameState, ctx: Ctx): void {
   const day = s.day;
-  const target = resolvePackTarget(s, ctx);
+  const target = s.night?.lockedTarget ?? null;
   const actors = livingPlayers(s);
   const chosen = (p: PlayerState, a: AbilityDef): AbilityChoice | undefined => s.nightActions[p.id]?.[a.id];
   const each = (kind: AbilityDef['kind'], fn: (p: PlayerState, a: AbilityDef, c: AbilityChoice) => void) => {
@@ -579,21 +659,24 @@ function resolveNight(s: GameState, ctx: Ctx): void {
   for (const p of actors) {
     for (const a of abilitiesOf(s, p)) if (a.kind === 'protect' && !chosen(p, a)) p.lastTarget[a.id] = null;
   }
-  const strikeIds: PlayerId[] = [];
-  each('strike', (p, a, c) => {
-    consume(p, a);
-    if (c.target) strikeIds.push(c.target);
-  });
+  // Heiltrank der Alchemistin: nur wenn sie „Retten" bestätigt hat; Standard bei Fristablauf: nicht eingreifen.
+  if (s.night?.healSave === true && target) {
+    for (const p of actors) {
+      for (const a of abilitiesOf(s, p)) {
+        if (a.kind === 'heal' && hasUses(p, a)) {
+          consume(p, a);
+          protectedIds.add(target);
+        }
+      }
+    }
+  }
 
   const deaths: PlayerId[] = [];
-  // Kill-Frequenz je Spielerzahl konfigurierbar (Standard: jede Nacht).
-  const interval = Math.max(1, s.rules.nightKillInterval[Object.keys(s.players).length] ?? 1);
-  const killNight = (day - 1) % interval === 0;
-  if (killNight && target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
-  for (const t of strikeIds) if (isAlive(s, t) && !deaths.includes(t)) deaths.push(t);
+  if (target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
 
   s.nightActions = {};
   s.packVotes = {};
+  s.night = null;
   s.readyAdvance = [];
   s.majorityAt = null;
   for (const id of deaths) {
@@ -692,6 +775,10 @@ function step(s: GameState, ctx: Ctx, force: boolean): boolean {
     }
     case 'night': {
       if (!(now >= phase.endsAt || force)) return false;
+      if (phase.stage === 'act') {
+        lockPack(s, ctx);
+        return true;
+      }
       resolveNight(s, ctx);
       return true;
     }
@@ -710,6 +797,7 @@ function step(s: GameState, ctx: Ctx, force: boolean): boolean {
 }
 
 function settle(s: GameState, ctx: Ctx, force = false): void {
+  expireObservers(s, ctx.now);
   let guard = 0;
   let first = true;
   // Force gilt für genau einen Übergang (technischer Notfall), danach normale Regeln.
@@ -738,14 +826,14 @@ function requireLivingTarget(s: GameState, target: PlayerId, opts: { not?: Playe
 }
 
 function applyNightAction(s: GameState, actor: PlayerState, cmd: Extract<Command, { type: 'night_action' }>): void {
-  if (s.phase.kind !== 'night') fail('wrong_phase', 'Nachtaktionen gibt es nur nachts');
+  if (s.phase.kind !== 'night' || s.phase.stage !== 'act') fail('wrong_phase', 'Nachtaktionen gibt es nur in der Handlungsphase der Nacht');
   const a = abilitiesOf(s, actor).find((x) => x.id === cmd.ability);
-  if (!a || a.kind === 'last_shot') return fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
+  // heal, observe und last_shot haben eigene Befehle bzw. Zeitfenster.
+  if (!a || a.kind === 'last_shot' || a.kind === 'heal' || a.kind === 'observe') return fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
   if (!hasUses(actor, a)) fail('no_uses_left', 'Keine Nutzungen übrig');
   let choice: AbilityChoice = {};
   switch (a.kind) {
-    case 'inspect':
-    case 'strike': {
+    case 'inspect': {
       if (!cmd.target) return fail('invalid_target', 'Ziel fehlt');
       requireLivingTarget(s, cmd.target, { not: actor.id });
       choice = { target: cmd.target };
@@ -771,13 +859,71 @@ function applyNightAction(s: GameState, actor: PlayerState, cmd: Extract<Command
       break;
   }
   const chosen = (s.nightActions[actor.id] ??= {});
-  const max = s.rules.roles[actor.role].maxAbilitiesPerNight;
-  if (max !== null && !(a.id in chosen)) {
-    // Eine neue Fähigkeit ersetzt die bisherige Wahl, wenn das Nachtlimit der Rolle erreicht ist.
-    const keep = Object.keys(chosen).slice(0, Math.max(0, max - 1));
-    for (const k of Object.keys(chosen)) if (!keep.includes(k)) delete chosen[k];
-  }
   chosen[a.id] = choice;
+}
+
+// ───────────────────────── Beobachter & Ausschau halten ─────────────────────────
+
+const observeAbility = (s: GameState, p: PlayerState): AbilityDef | undefined => abilitiesOf(s, p).find((a) => a.kind === 'observe');
+
+/** Fenster ist aktiv, solange es offen ist, Lebenszeichen eintreffen und die Höchstdauer nicht überschritten ist. */
+function windowActive(s: GameState, o: ObserverState, ability: AbilityDef | undefined, now: number): boolean {
+  if (!o.open || o.windowStartedAt === null || o.lastPingAt === null) return false;
+  const max = ability?.windowMs ?? 10_000;
+  return now - o.lastPingAt <= s.rules.durations.observerPingTtlMs && now - o.windowStartedAt <= max;
+}
+
+/** Schließt Beobachtungsfenster, deren Frist/Lebenszeichen abgelaufen ist (z. B. Hintergrund, Verbindungsabbruch). */
+function expireObservers(s: GameState, now: number): void {
+  if (s.phase.kind !== 'night' || !s.night) return;
+  for (const [id, o] of Object.entries(s.night.observers)) {
+    if (o.open && !windowActive(s, o, s.players[id] ? observeAbility(s, s.players[id]!) : undefined, now)) o.open = false;
+  }
+}
+
+function observe(s: GameState, actor: PlayerState, action: 'start' | 'ping' | 'stop', ctx: Ctx): void {
+  const ability = observeAbility(s, actor);
+  if (!ability) return fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
+  if (s.phase.kind !== 'night' || s.phase.stage !== 'act' || !s.night) return fail('wrong_phase', 'Nur in der Handlungsphase der Nacht');
+  let o = s.night.observers[actor.id];
+  if (action === 'stop') {
+    if (o) o.open = false;
+    return;
+  }
+  if (action === 'ping') {
+    if (o && windowActive(s, o, ability, ctx.now)) o.lastPingAt = ctx.now;
+    return;
+  }
+  // start: pro Nacht ein Fenster. Das beobachtete Rudelmitglied und die wahre Aussage stehen mit dem Start fest.
+  if (o) return fail('already_decided', 'Dein Blick in die Dunkelheit ist für diese Nacht vorbei');
+  const pack = livingPlayers(s).filter((p) => p.faction === 'pack');
+  if (pack.length === 0) return fail('invalid_target', 'Nichts zu sehen');
+  const target = ctx.rng.pick(pack);
+  const group = livingPlayers(s).map((p) => p.profile);
+  o = { target: target.id, hint: pickStatement(target.profile, group, ctx.rng), windowStartedAt: ctx.now, lastPingAt: ctx.now, open: true };
+  s.night.observers[actor.id] = o;
+}
+
+function lookout(s: GameState, actor: PlayerState, ctx: Ctx): void {
+  if (!s.rules.lookout.enabled) return fail('not_allowed', 'Ausschau halten ist nicht verfügbar');
+  if (actor.faction !== 'pack') return fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
+  if (s.phase.kind !== 'night' || s.phase.stage !== 'act' || !s.night) return fail('wrong_phase', 'Nur in der Handlungsphase der Nacht');
+  // Das gesamte Rudel hat gemeinsam genau einen Versuch pro Nacht.
+  if (s.night.lookoutUsed) return fail('already_decided', 'Das Rudel hat in dieser Nacht bereits Ausschau gehalten');
+  s.night.lookoutUsed = true;
+  const hit = Object.entries(s.night.observers).find(([id, o]) => {
+    const p = s.players[id];
+    return !!p?.alive && windowActive(s, o, observeAbility(s, p), ctx.now);
+  });
+  const pack = livingPlayers(s).filter((p) => p.faction === 'pack');
+  if (!hit) {
+    for (const m of pack) addNote(s, m.id, s.day, 'lookout_miss', { by: actor.id });
+    return;
+  }
+  // Treffer: alle Rudelmitglieder erhalten gemeinsam genau EIN wahres Merkmal des Beobachters.
+  const observer = s.players[hit[0]]!;
+  const statement = pickStatement(observer.profile, livingPlayers(s).map((p) => p.profile), ctx.rng);
+  for (const m of pack) addNote(s, m.id, s.day, 'lookout_result', { by: actor.id, statement });
 }
 
 function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: Ctx): void {
@@ -878,7 +1024,7 @@ function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: 
     }
     case 'pack_target': {
       if (actor.faction !== 'pack') fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
-      if (s.phase.kind !== 'day' && s.phase.kind !== 'dusk' && s.phase.kind !== 'night') {
+      if (s.phase.kind !== 'day' && s.phase.kind !== 'dusk' && !(s.phase.kind === 'night' && s.phase.stage === 'act')) {
         fail('wrong_phase', 'Jetzt kann kein Ziel gewählt werden');
       }
       const t = requireLivingTarget(s, cmd.target);
@@ -890,11 +1036,45 @@ function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: 
       applyNightAction(s, actor, cmd);
       return;
     }
+    case 'suspect': {
+      const np = s.phase;
+      if (np.kind !== 'night' || np.stage !== 'act') return fail('wrong_phase', 'Verdacht gibt es nur zu Beginn der Nacht');
+      const others = livingIds(s).filter((id) => id !== actor.id);
+      const need = Math.min(s.packSeats, others.length);
+      const targets = cmd.targets;
+      if (!Array.isArray(targets) || new Set(targets).size !== targets.length || targets.length !== need) {
+        return fail('invalid_target', `Wähle genau ${need} verschiedene Personen`);
+      }
+      for (const t of targets) if (!others.includes(t)) return fail('invalid_target', 'Nur lebende andere Spieler sind wählbar');
+      const existing = s.suspicions.findIndex((e) => e.day === s.day && e.by === actor.id);
+      const entry = { day: s.day, by: actor.id, targets: [...targets] };
+      if (existing >= 0) s.suspicions[existing] = entry;
+      else s.suspicions.push(entry);
+      return;
+    }
+    case 'observe': {
+      observe(s, actor, cmd.action, ctx);
+      return;
+    }
+    case 'lookout': {
+      lookout(s, actor, ctx);
+      return;
+    }
+    case 'heal_decision': {
+      const hp = s.phase;
+      if (hp.kind !== 'night' || hp.stage !== 'heal' || !s.night) return fail('wrong_phase', 'Jetzt gibt es nichts zu entscheiden');
+      const ability = abilitiesOf(s, actor).find((a) => a.kind === 'heal');
+      if (!ability) return fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
+      if (!hasUses(actor, ability)) return fail('no_uses_left', 'Dein Trank ist verbraucht');
+      if (!s.night.lockedTarget) return fail('wrong_phase', 'Es gibt kein Opfer');
+      if (s.night.healSave !== null) return fail('already_decided', 'Du hast dich bereits entschieden');
+      s.night.healSave = cmd.save === true;
+      return;
+    }
     case 'choose_side': {
       if (!actor.sidePending) fail('not_allowed', 'Keine Wahl offen');
       if (s.phase.kind === 'night' || s.phase.kind === 'ended') fail('wrong_phase', 'Zu spät für diese Wahl');
-      actor.sidePending = false;
-      actor.faction = cmd.side;
+      finalizeBorderwalker(s, ctx, actor.id, cmd.side);
       return;
     }
     default:
@@ -948,8 +1128,18 @@ export function nextDeadline(s: GameState): number | null {
   const p = s.phase;
   switch (p.kind) {
     case 'speaker_election':
-    case 'night':
       return p.endsAt;
+    case 'night': {
+      const t = [p.endsAt];
+      if (p.stage === 'act' && s.night) {
+        for (const [id, o] of Object.entries(s.night.observers)) {
+          if (!o.open || o.lastPingAt === null || o.windowStartedAt === null) continue;
+          const max = s.players[id] ? (observeAbility(s, s.players[id]!)?.windowMs ?? 10_000) : 10_000;
+          t.push(Math.min(o.lastPingAt + s.rules.durations.observerPingTtlMs + 1, o.windowStartedAt + max + 1));
+        }
+      }
+      return Math.min(...t);
+    }
     case 'morning':
       return p.endsAt;
     case 'council':

@@ -14,7 +14,30 @@ export type RoleId =
   | 'guardian'
   | 'borderwalker'
   | 'hunter'
-  | 'shadowwolf';
+  | 'shadowwolf'
+  | 'observer';
+
+export type Gender = 'female' | 'male' | 'diverse';
+export type HairColor = 'black' | 'brown' | 'blonde' | 'red' | 'gray';
+export type EyeColor = 'brown' | 'blue' | 'green' | 'gray';
+
+/** Spielerprofil (für Mitspieler sichtbar). Das exakte Alter wird gespeichert und angezeigt. */
+export interface Profile {
+  age: number;
+  gender: Gender;
+  hair: HairColor;
+  eyes: EyeColor;
+}
+
+/** Wahre, möglichst nicht eindeutige Aussage über ein Profil (Beobachter-Hinweis, Ausschau halten). */
+export type TraitStatement =
+  | { trait: 'gender'; value: Gender }
+  | { trait: 'hair'; value: HairColor | 'dark' | 'light' }
+  | { trait: 'eyes'; value: EyeColor | 'light' }
+  | { trait: 'age_over'; value: number }
+  | { trait: 'age_under'; value: number };
+
+export type RoleMode = 'off' | 'possible' | 'guaranteed';
 
 /** Verbleibende Nutzungen je Fähigkeit-ID (UNLIMITED = unbegrenzt). */
 export type PlayerUses = Record<string, number>;
@@ -25,8 +48,13 @@ export interface PlayerState {
   name: string;
   seat: number;
   alive: boolean;
+  /**
+   * Fraktion und Sonderrolle sind getrennt: `faction` ist Dorf/Rudel, `role` ist die (höchstens eine)
+   * Sonderrolle bzw. die Grundrolle villager/wolf. Eine spätere Sonderrolle ändert die Fraktion nicht.
+   */
   role: RoleId;
   faction: Faction;
+  profile: Profile;
   /** Tag, an dem die Rolle zugewiesen wurde (1 = Spielstart). */
   roleSince: number;
   uses: PlayerUses;
@@ -37,7 +65,7 @@ export interface PlayerState {
   eliminatedDay: number | null;
 }
 
-export type AbilityKind = 'inspect' | 'inspect_group' | 'protect' | 'strike' | 'veil' | 'last_shot';
+export type AbilityKind = 'inspect' | 'inspect_group' | 'protect' | 'heal' | 'veil' | 'last_shot' | 'observe';
 
 /**
  * Datengetriebene Fähigkeit. Wirkung, Nutzungszahl und Parameter sind Konfiguration (Rules.roles),
@@ -54,6 +82,8 @@ export interface AbilityDef {
   noRepeatTarget?: boolean;
   /** protect: darf sich selbst wählen (Standard true). */
   allowSelf?: boolean;
+  /** observe: maximale Dauer eines Beobachtungsfensters. */
+  windowMs?: number;
 }
 
 export type Trigger = 'start' | 'quest_reward' | 'after_first_council' | 'day_start';
@@ -76,8 +106,12 @@ export interface RoleDef {
   /** Geheime Fraktionswahl der Person selbst (z. B. Grenzgänger). */
   startChoice: boolean;
   abilities: AbilityDef[];
-  /** Höchstens so viele Fähigkeiten pro Nacht (null = unbegrenzt). Eine neue Wahl ersetzt die bisherige. */
-  maxAbilitiesPerNight: number | null;
+  /** Höchstens so viele lebende Träger gleichzeitig (null = unbegrenzt). */
+  maxLivingHolders: number | null;
+  /** Höchstens so oft je Partie vergeben (null = unbegrenzt). Wiedervergabe nach dem Tod des Trägers ist möglich. */
+  maxGrants: number | null;
+  /** Ist die Rolle im Spiel, wissen alle von Beginn an davon (z. B. Grenzgänger). */
+  announcedAtStart: boolean;
 }
 
 /** tiny = Kleingruppen 4–6 (Balance offen), small = 7, medium = 8–10, large = 11–14. */
@@ -85,8 +119,11 @@ export type SizeBand = 'tiny' | 'small' | 'medium' | 'large';
 
 export type QuestRewardDef =
   | { kind: 'hint' }
-  /** Löst einen Rollen-Moment aus (noRoleChance und Pool bestimmen, ob wirklich eine Rolle vergeben wird). */
-  | { kind: 'role' }
+  /**
+   * Schaltet eine Sonderrolle frei und sagt es öffentlich an („Einer von euch wird zum …"). Ohne `role`
+   * wird aus dem Pool gewichtet gezogen. Gibt es keinen geeigneten Empfänger, gibt es keine Freischaltung.
+   */
+  | { kind: 'unlock_role'; role?: RoleId }
   /** Öffentliches Ereignis ohne Mechanik (Mechanik wird später konfiguriert). */
   | { kind: 'event'; eventKey: string };
 
@@ -127,7 +164,9 @@ export interface Rules {
   /** Ab dieser Zahl lebender Spieler werden keine neuen Rollen mehr eingeführt (0 = aus). Zustandsabhängig, aber nicht stärkebasiert. */
   finaleAlive: number;
   /** Rollen-Momente. Impulse erscheinen bei JEDEM Moment, unabhängig davon, ob eine Rolle vergeben wird. */
-  moments: Record<Exclude<Trigger, 'start'>, MomentDef>;
+  moments: Record<'after_first_council' | 'day_start', MomentDef>;
+  /** Ausschau halten des Rudels gegen den Beobachter. */
+  lookout: { enabled: boolean };
   durations: {
     speakerElectionMs: number;
     /** Abendmodus: Richtwert, ab wann die Engine zur Abstimmung auffordert (Diskussion wird nie abrupt beendet). */
@@ -138,12 +177,18 @@ export interface Rules {
     pointingMs: number; // Zeit zum gleichzeitigen Zeigen
     tiebreakMs: number;
     resultMs: number;
+    /** Länge der Handlungsphase der Nacht (fest, für alle gleich). */
     nightMs: number;
+    /** Länge des Heil-Fensters nach der Rudelentscheidung (fest, auch ohne Alchemistin). */
+    healWindowMs: number;
+    /** Ein Beobachtungsfenster endet, wenn so lange kein Lebenszeichen des Geräts eintrifft. */
+    observerPingTtlMs: number;
     morningMs: number;
     questMs: number;
     /** Wartezeit nach Mehrheit, bevor ohne alle Bestätigungen fortgesetzt wird. */
     confirmGraceMs: number;
-    impulseMs: number;
+    /** Dauer eines öffentlichen Moments (Overlay mit privatem PIN-Bereich), für alle gleich. */
+    momentMs: number;
   };
   evening: {
     minDayMs: number;
@@ -159,7 +204,7 @@ export interface AbilityChoice {
   targets?: PlayerId[];
 }
 
-export type NoteKind = 'role' | 'inspect_result' | 'group_result' | 'role_gained' | 'info';
+export type NoteKind = 'role' | 'inspect_result' | 'group_result' | 'role_gained' | 'lookout_result' | 'lookout_miss' | 'info';
 
 export interface PrivateNote {
   id: number;
@@ -209,7 +254,7 @@ export type Phase =
     }
   | { kind: 'council'; council: CouncilState; nightAt: number | null }
   | { kind: 'dusk'; startedAt: number; nightAt: number | null }
-  | { kind: 'night'; startedAt: number; endsAt: number }
+  | { kind: 'night'; startedAt: number; endsAt: number; stage: 'act' | 'heal' }
   | { kind: 'morning'; startedAt: number; endsAt: number; deaths: PlayerId[] }
   | { kind: 'ended' };
 
@@ -226,7 +271,8 @@ export type EventKind =
   | 'morning'
   | 'eliminated'
   | 'last_shot'
-  | 'impulse'
+  | 'moment'
+  | 'borderwalker_announced'
   | 'game_ended';
 
 export interface PublicEvent {
@@ -238,13 +284,59 @@ export interface PublicEvent {
   data?: Record<string, unknown>;
 }
 
-export interface Impulse {
+export type MomentKind = 'start' | 'quest_unlock' | 'neutral' | 'hint' | 'borderwalker_decided' | 'pack_decided';
+
+/**
+ * Synchroner öffentlicher Moment: alle Geräte zeigen gleichzeitig denselben Screen (gleicher Sound/Haptic,
+ * gleiche Dauer). Danach öffnet jeder Spieler mit derselben PIN-Interaktion seinen privaten Bereich auf diesem Screen.
+ */
+export interface Moment {
   id: number;
-  /** 'change': eine geheime Rolle wurde verteilt (für alle gleich); 'hint': reiner Hinweis. */
-  kind: 'change' | 'hint';
-  textKey: string;
+  kind: MomentKind;
   at: number;
   showUntil: number;
+  /** true: Auf dem Screen gibt es für jeden Spieler denselben PIN-geschützten privaten Bereich. */
+  secret: boolean;
+  /** quest_unlock: die öffentlich angesagte Rolle. */
+  role?: RoleId;
+  /** hint: Textschlüssel des Hinweises. */
+  textKey?: string;
+  /** start: Rollen, von deren Existenz alle von Anfang an wissen. */
+  announced?: RoleId[];
+}
+
+/** Geheimer Teil eines Moments (nur für den Server/den Betroffenen). */
+export interface MomentSecret {
+  momentId: number;
+  recipient: PlayerId | null;
+  role: RoleId | null;
+  faction?: Faction;
+  /** pack_decided: das gesperrte Rudelopfer (nur für die Alchemistin sichtbar). */
+  victim?: PlayerId;
+}
+
+export interface SuspicionEntry {
+  day: number;
+  by: PlayerId;
+  targets: PlayerId[];
+}
+
+export interface ObserverState {
+  /** Das beobachtete lebende Rudelmitglied und die wahre Aussage über dieses (für diese Nacht fest). */
+  target: PlayerId;
+  hint: TraitStatement;
+  windowStartedAt: number | null;
+  lastPingAt: number | null;
+  /** Fenster ist aktuell offen (wird durch Loslassen, Ablauf oder fehlende Lebenszeichen beendet). */
+  open: boolean;
+}
+
+export interface NightState {
+  lockedTarget: PlayerId | null;
+  /** Heil-Entscheidung der Alchemistin (null = noch offen). */
+  healSave: boolean | null;
+  lookoutUsed: boolean;
+  observers: Record<PlayerId, ObserverState>;
 }
 
 export interface GameState {
@@ -273,10 +365,22 @@ export interface GameState {
   hunterShots: Record<PlayerId, PlayerId | null>;
   usedQuestIds: string[];
   usedImpulseKeys: string[];
+  /** Öffentlich bekannte Zahl der Rudelplätze zu Spielbeginn (bleibt konstant, unabhängig von geheimen Entscheidungen). */
+  packSeats: number;
+  /** Spielerzahl zu Beginn. */
+  playerCount: number;
+  /** Anzahl späterer Rollenvergaben (für die Obergrenze) und je Rolle. */
+  laterGrants: number;
+  grantsByRole: Partial<Record<RoleId, number>>;
+  bwDecidedAnnounced: boolean;
+  night: NightState | null;
+  /** Geheime Verdachtsabgaben (nur für den Spielrückblick). */
+  suspicions: SuspicionEntry[];
   /** Anzahl Sonderrollen, die beim Start vergeben wurden. */
   startSpecialCount: number;
   firstCouncilDone: boolean;
-  impulse: Impulse | null;
+  moment: Moment | null;
+  momentSecret: MomentSecret | null;
   events: PublicEvent[];
   nextEventId: number;
   nextNoteId: number;
@@ -294,6 +398,10 @@ export type Command =
   | { type: 'decide_tie'; target: PlayerId }
   | { type: 'pack_target'; target: PlayerId }
   | { type: 'night_action'; ability: string; target?: PlayerId; targets?: PlayerId[] }
+  | { type: 'suspect'; targets: PlayerId[] }
+  | { type: 'observe'; action: 'start' | 'ping' | 'stop' }
+  | { type: 'lookout' }
+  | { type: 'heal_decision'; save: boolean }
   | { type: 'choose_side'; side: Faction }
   | { type: 'hunter_shoot'; target: PlayerId };
 
@@ -312,7 +420,9 @@ export type Result =
   | { ok: false; error: { code: ErrorCode; message: string } };
 
 export interface StartInput {
-  roster: { id: PlayerId; name: string }[];
+  roster: { id: PlayerId; name: string; profile?: Profile }[];
+  /** Host-Konfiguration je Rolle: aus / möglich / garantiert. */
+  roleModes?: Partial<Record<RoleId, RoleMode>>;
   hostId: PlayerId;
   mode: Mode;
   /** Abendmodus: gewünschte Gesamtdauer in Minuten. */

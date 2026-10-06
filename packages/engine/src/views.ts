@@ -1,15 +1,18 @@
 // Projektionen des geheimen Zustands. Der Server schreibt NUR diese Sichten in Tabellen,
 // die Clients lesen dürfen. Der volle GameState verlässt den Server nie.
 import { councilReadyFlag, livingPlayers, voteReadyFlag } from './engine';
+import { retrospective, type Retrospective } from './retrospective';
 import type {
   AbilityChoice,
   Faction,
   GameState,
-  Impulse,
+  Moment,
   PlayerId,
+  Profile,
   PrivateNote,
   PublicEvent,
   RoleId,
+  TraitStatement,
 } from './types';
 
 export interface PublicPlayer {
@@ -18,6 +21,10 @@ export interface PublicPlayer {
   seat: number;
   alive: boolean;
   isSpeaker: boolean;
+  /** Profil ist für Mitspieler sichtbar (Alter exakt). */
+  profile: Profile;
+  /** Beim Ausscheiden für alle gleichzeitig aufgedeckt: Fraktion und Sonderrolle bzw. Grundrolle. */
+  revealed: { faction: Faction; role: RoleId } | null;
 }
 
 export interface PublicCouncil {
@@ -58,11 +65,22 @@ export interface PublicView {
   electionProgress: { cast: number; total: number } | null;
   morningDeaths: PlayerId[] | null;
   council: PublicCouncil | null;
-  impulse: Impulse | null;
+  /** Aktueller synchroner Moment (alle Geräte zeigen ihn gleichzeitig). */
+  moment: Moment | null;
+  /** Öffentlich bekannte Rudelplätze zu Spielbeginn (konstant, unabhängig von geheimen Entscheidungen). */
+  packSeats: number;
+  /** Spielerzahl zu Spielbeginn. */
+  playerCount: number;
+  /** Nacht: Handlungsphase oder Heil-Fenster. */
+  nightStage: 'act' | 'heal' | null;
+  /** Wie viele Personen jeder Lebende vor der Nacht als Verdächtige markiert (Rudelplätze, begrenzt durch die Lebenden). */
+  suspicionCount: number;
   events: PublicEvent[];
   winner: Faction | null;
   /** Erst nach Spielende: alle Rollen. */
   reveal: { id: PlayerId; role: RoleId; faction: Faction }[] | null;
+  /** Erst nach Spielende: Rückblick aus den geheimen Verdachtsabgaben. */
+  retrospective: Retrospective | null;
 }
 
 export function publicView(s: GameState): PublicView {
@@ -153,6 +171,9 @@ export function publicView(s: GameState): PublicView {
         seat: pl.seat,
         alive: pl.alive,
         isSpeaker: s.speakerId === pl.id,
+        profile: pl.profile,
+        // Beim Ausscheiden für alle gleichzeitig aufgedeckt (Fraktion + Sonderrolle bzw. Grundrolle).
+        revealed: pl.alive ? null : { faction: pl.faction, role: pl.role },
       })),
     livingCount: living.length,
     speakerId: s.speakerId,
@@ -162,13 +183,18 @@ export function publicView(s: GameState): PublicView {
     electionProgress,
     morningDeaths,
     council,
-    impulse: s.impulse,
+    moment: s.moment,
+    packSeats: s.packSeats,
+    playerCount: s.playerCount,
+    nightStage: p.kind === 'night' ? p.stage : null,
+    suspicionCount: Math.max(0, Math.min(s.packSeats, living.length - 1)),
     events: s.events.slice(-60),
     winner: p.kind === 'ended' ? s.winner : null,
     reveal:
       p.kind === 'ended'
         ? Object.values(s.players).map((pl) => ({ id: pl.id, role: pl.role, faction: pl.faction }))
         : null,
+    retrospective: p.kind === 'ended' ? retrospective(s) : null,
   };
 }
 
@@ -177,7 +203,7 @@ export function publicView(s: GameState): PublicView {
 /** Beschreibung einer verfügbaren Nachtfähigkeit für die UI (Wirkung steht in der Rollen-Konfiguration). */
 export interface AbilitySpec {
   id: string;
-  kind: 'inspect' | 'inspect_group' | 'protect' | 'strike' | 'veil';
+  kind: 'inspect' | 'inspect_group' | 'protect' | 'veil';
   targets: PlayerId[];
   /** null = unbegrenzt */
   usesLeft: number | null;
@@ -185,6 +211,20 @@ export interface AbilitySpec {
   forbidden?: PlayerId | null;
   choice: AbilityChoice | null;
 }
+
+/**
+ * Inhalt des privaten Bereichs AUF dem synchronen Moment-Screen. Jeder Spieler hat zu jedem geheimen Moment
+ * genau einen Inhalt; wer nicht betroffen ist, bekommt einen atmosphärischen neutralen Inhalt (`neutral`).
+ */
+export type PrivatePanel =
+  | { momentId: number; kind: 'role_info' }
+  | { momentId: number; kind: 'you_are'; role: RoleId }
+  | { momentId: number; kind: 'chose'; faction: Faction }
+  | { momentId: number; kind: 'heal_prompt'; victim: PlayerId; decided: boolean | null }
+  | { momentId: number; kind: 'neutral'; variant: number };
+
+/** Anzahl der neutralen Textvarianten je Momentart (die App hält die Texte; der Index ist deterministisch). */
+export const NEUTRAL_VARIANTS = 4;
 
 export interface PrivateView {
   schema: 1;
@@ -196,17 +236,53 @@ export interface PrivateView {
   packMates: { id: PlayerId; name: string; alive: boolean }[];
   hasPackChannel: boolean;
   /** Aktuell vorgeschlagenes Rudelziel dieses Spielers und das Zwischenergebnis. */
-  packTarget: { mine: PlayerId | null; candidates: PlayerId[]; leading: PlayerId[] } | null;
+  packTarget: { mine: PlayerId | null; candidates: PlayerId[]; leading: PlayerId[]; locked: boolean } | null;
   notes: PrivateNote[];
-  /** Verfügbare Nachtfähigkeiten in der aktuellen Nacht (leer außerhalb der Nacht). */
+  /** Verfügbare Nachtfähigkeiten in der aktuellen Nacht (leer außerhalb der Handlungsphase). */
   abilities: AbilitySpec[];
   sidePending: boolean;
   /** Ausgeschiedener Jäger mit offenem letztem Schuss. */
   lastShot: { open: boolean; targets: PlayerId[]; chosen: PlayerId | null } | null;
   readyCouncil: boolean;
   readyAdvance: boolean;
-  /** Eigene Stimme/Nominierung in der laufenden Abstimmung. */
+  /** Eigene Stimme in der laufenden Abstimmung. */
   myBallot: PlayerId | null;
+  /** Privater Bereich des aktuellen geheimen Moments. */
+  panel: PrivatePanel | null;
+  /** Beobachter: Fenster offen? Der Hinweis ist nur sichtbar, solange das Fenster serverseitig aktiv ist. */
+  observation: { available: boolean; open: boolean; hint: TraitStatement | null; startedAt: number | null; windowMs: number } | null;
+  /** Rudel: Ausschau halten (gemeinsam ein Versuch pro Nacht). */
+  lookout: { available: boolean } | null;
+  /** Alchemistin: Heil-Entscheidung während des Heil-Fensters. */
+  heal: { victim: PlayerId; decided: boolean | null } | null;
+}
+
+function variantFor(id: string, momentId: number): number {
+  let h = momentId * 2654435761;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % NEUTRAL_VARIANTS;
+}
+
+function panelFor(s: GameState, id: PlayerId): PrivatePanel | null {
+  const m = s.moment;
+  if (!m || !m.secret) return null;
+  const sec = s.momentSecret && s.momentSecret.momentId === m.id ? s.momentSecret : null;
+  const neutral: PrivatePanel = { momentId: m.id, kind: 'neutral', variant: variantFor(id, m.id) };
+  switch (m.kind) {
+    case 'start':
+      return { momentId: m.id, kind: 'role_info' };
+    case 'quest_unlock':
+    case 'neutral':
+      return sec?.recipient === id && sec.role ? { momentId: m.id, kind: 'you_are', role: sec.role } : neutral;
+    case 'borderwalker_decided':
+      return sec?.recipient === id && sec.faction ? { momentId: m.id, kind: 'chose', faction: sec.faction } : neutral;
+    case 'pack_decided':
+      return sec?.recipient === id && sec.victim
+        ? { momentId: m.id, kind: 'heal_prompt', victim: sec.victim, decided: s.night?.healSave ?? null }
+        : neutral;
+    default:
+      return null;
+  }
 }
 
 export function privateView(s: GameState, id: PlayerId): PrivateView | null {
@@ -215,11 +291,13 @@ export function privateView(s: GameState, id: PlayerId): PrivateView | null {
   const alive = livingPlayers(s);
   const others = alive.filter((p) => p.id !== id).map((p) => p.id);
   const isPack = me.alive && me.faction === 'pack';
+  const phase = s.phase;
+  const actStage = phase.kind === 'night' && phase.stage === 'act';
 
   const abilities: AbilitySpec[] = [];
-  if (s.phase.kind === 'night' && me.alive) {
+  if (actStage && me.alive) {
     for (const a of s.rules.roles[me.role].abilities) {
-      if (a.kind === 'last_shot' || (me.uses[a.id] ?? 0) <= 0) continue;
+      if (a.kind === 'last_shot' || a.kind === 'heal' || a.kind === 'observe' || (me.uses[a.id] ?? 0) <= 0) continue;
       abilities.push({
         id: a.id,
         kind: a.kind,
@@ -245,10 +323,10 @@ export function privateView(s: GameState, id: PlayerId): PrivateView | null {
       mine: s.packVotes[id] && s.players[s.packVotes[id]!]?.alive ? s.packVotes[id]! : null,
       candidates: alive.filter((p) => p.faction !== 'pack').map((p) => p.id),
       leading: top > 0 ? Object.keys(counts).filter((k) => counts[k] === top) : [],
+      locked: phase.kind === 'night' && phase.stage === 'heal',
     };
   }
 
-  const phase = s.phase;
   let lastShot: PrivateView['lastShot'] = null;
   if (!me.alive && id in s.hunterShots) {
     const open = (phase.kind === 'council' && phase.council.step === 'result') || phase.kind === 'morning';
@@ -257,8 +335,28 @@ export function privateView(s: GameState, id: PlayerId): PrivateView | null {
 
   let myBallot: PlayerId | null = null;
   if (phase.kind === 'speaker_election') myBallot = phase.votes[id] ?? null;
-  if (phase.kind === 'council') {
-    myBallot = phase.council.votes[id] ?? null;
+  if (phase.kind === 'council') myBallot = phase.council.votes[id] ?? null;
+
+  // Beobachter: der Hinweis ist nur sichtbar, solange sein Fenster serverseitig aktiv ist.
+  let observation: PrivateView['observation'] = null;
+  const obsAbility = me.alive ? s.rules.roles[me.role].abilities.find((a) => a.kind === 'observe') : undefined;
+  if (obsAbility) {
+    const o = s.night?.observers[id];
+    observation = {
+      available: actStage && !o,
+      open: !!o?.open,
+      hint: o?.open ? o.hint : null,
+      startedAt: o?.open ? o.windowStartedAt : null,
+      windowMs: obsAbility.windowMs ?? 10_000,
+    };
+  }
+
+  const lookout: PrivateView['lookout'] = isPack && s.rules.lookout.enabled ? { available: actStage && !s.night?.lookoutUsed } : null;
+
+  let heal: PrivateView['heal'] = null;
+  if (me.alive && phase.kind === 'night' && phase.stage === 'heal' && s.night?.lockedTarget) {
+    const ab = s.rules.roles[me.role].abilities.find((a) => a.kind === 'heal');
+    if (ab && (me.uses[ab.id] ?? 0) > 0) heal = { victim: s.night.lockedTarget, decided: s.night.healSave };
   }
 
   return {
@@ -281,6 +379,10 @@ export function privateView(s: GameState, id: PlayerId): PrivateView | null {
     readyCouncil: s.readyCouncil.includes(id),
     readyAdvance: s.readyAdvance.includes(id),
     myBallot,
+    panel: panelFor(s, id),
+    observation,
+    lookout,
+    heal,
   };
 }
 

@@ -3,7 +3,7 @@ import { applyCommand, checkWin, tick } from '../src/engine';
 import { packChannelMembers, privateView } from '../src/views';
 import type { GameState } from '../src/types';
 import { UNLIMITED } from '../src/types';
-import { alive, electSpeaker, forceNight, must, newGame, T0, withRoles } from './helpers';
+import { alive, electSpeaker, endNight, forceNight, must, newGame, T0, withRoles } from './helpers';
 
 /** Setzt eine laufende Quest direkt (Testhilfe) und beendet sie per Frist. */
 function runQuest(s: GameState, questId: string, doneBy: string[]): GameState {
@@ -15,48 +15,72 @@ function runQuest(s: GameState, questId: string, doneBy: string[]): GameState {
 }
 
 const day = (rules?: object, n = 10) => electSpeaker(withRoles(newGame(n, 'q', { rules: rules as never }), { p1: 'wolf', p2: 'wolf' }), T0 + 1, 'p9');
-const impulses = (s: GameState) => s.events.filter((e) => e.kind === 'impulse');
+const moments = (s: GameState) => s.events.filter((e) => e.kind === 'moment');
+const specials = (s: GameState) => Object.values(s.players).filter((p) => s.rules.roles[p.role].special);
+const everyone = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'];
 
 describe('Quest-Belohnungen', () => {
   it('Eine Quest ohne konfigurierte Belohnung erzeugt auch bei Erfolg nichts', () => {
     const s = day();
-    const before = impulses(s).length;
+    const before = moments(s).length;
     const r = runQuest(s, 'q-tabu-1', alive(s).map((p) => p.id));
     expect(r.events.at(-1)!.kind).toBe('quest_ended');
     expect(r.events.at(-1)!.data).toMatchObject({ success: true });
-    expect(impulses(r)).toHaveLength(before);
+    expect(moments(r)).toHaveLength(before);
     expect(Object.values(r.players).map((p) => p.role)).toEqual(Object.values(s.players).map((p) => p.role));
   });
-  it('Nur ausdrücklich konfigurierte Quests lösen bei ERFOLG etwas aus: Hinweis', () => {
+  it('Hinweis-Quest: nur bei ERFOLG ein (nicht geheimer) Hinweis-Moment', () => {
     const s = day();
-    const before = impulses(s).length;
+    const before = moments(s).length;
     const ok = runQuest(s, 'q-wissen-1', alive(s).map((p) => p.id));
-    expect(impulses(ok)).toHaveLength(before + 1);
-    expect(ok.impulse?.kind).toBe('hint');
+    expect(moments(ok)).toHaveLength(before + 1);
+    expect(ok.moment?.kind).toBe('hint');
+    expect(ok.moment?.secret).toBe(false);
     const fail = runQuest(s, 'q-wissen-1', ['p1', 'p2']);
-    expect(impulses(fail)).toHaveLength(before);
+    expect(moments(fail)).toHaveLength(before);
     expect(fail.events.at(-1)!.data).toMatchObject({ success: false });
   });
-  it('Rollen-Belohnung: Impuls immer bei Erfolg, Vergabe nur nach noRoleChance', () => {
-    const none = day({ moments: { quest_reward: { noRoleChance: 1 } } });
-    const r0 = runQuest(none, 'q-koordination-1', alive(none).map((p) => p.id));
-    expect(r0.impulse?.kind).toBe('change');
-    expect(Object.values(r0.players).map((p) => p.role)).toEqual(Object.values(none.players).map((p) => p.role));
-
-    const some = day({ moments: { quest_reward: { noRoleChance: 0 } } });
-    const r1 = runQuest(some, 'q-koordination-1', alive(some).map((p) => p.id));
-    expect(r1.impulse?.kind).toBe('change');
-    expect(Object.values(r1.players).filter((p) => p.role !== 'villager' && p.role !== 'wolf').length)
-      .toBeGreaterThan(Object.values(some.players).filter((p) => p.role !== 'villager' && p.role !== 'wolf').length);
+  it('Freischaltungs-Quest: sagt die Rolle öffentlich an und vergibt sie an genau einen geeigneten Spieler', () => {
+    const s = day();
+    const ok = runQuest(s, 'q-koordination-1', everyone);
+    expect(ok.moment).toMatchObject({ kind: 'quest_unlock', role: 'scout', secret: true });
+    const holders = Object.values(ok.players).filter((p) => p.role === 'scout');
+    expect(holders).toHaveLength(1);
+    expect(holders[0]!.faction).toBe('village'); // Fraktion bleibt Dorf
+    expect(ok.momentSecret).toMatchObject({ recipient: holders[0]!.id, role: 'scout' });
+    expect(ok.laterGrants).toBe(1);
     // Nicht erfüllt → nichts
-    const failed = runQuest(some, 'q-koordination-1', ['p1']);
-    expect(impulses(failed)).toHaveLength(impulses(some).length);
+    const failed = runQuest(s, 'q-koordination-1', ['p1']);
+    expect(moments(failed)).toHaveLength(moments(s).length);
+    expect(specials(failed)).toHaveLength(specials(s).length);
   });
-  it('Impuls ist in beiden Fällen identisch (gleicher Text, gleiche Dauer)', () => {
-    const a = runQuest(day({ moments: { quest_reward: { noRoleChance: 1 } } }), 'q-koordination-1', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
-    const b = runQuest(day({ moments: { quest_reward: { noRoleChance: 0 } } }), 'q-koordination-1', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
-    expect(a.impulse?.textKey).toBe(b.impulse?.textKey);
-    expect(a.impulse!.showUntil - a.impulse!.at).toBe(b.impulse!.showUntil - b.impulse!.at);
+  it('Nur Spieler ohne Sonderrolle kommen infrage (höchstens eine Sonderrolle gleichzeitig)', () => {
+    let s = day();
+    // alle Dorfbewohner haben bereits eine Sonderrolle → keine Freischaltung
+    s = JSON.parse(JSON.stringify(s)) as GameState;
+    for (const p of Object.values(s.players)) if (p.faction === 'village') p.role = 'guardian';
+    const r = runQuest(s, 'q-koordination-1', everyone);
+    expect(r.moment?.kind).not.toBe('quest_unlock');
+  });
+  it('Eine Rolle kann nach dem Ausscheiden ihres Besitzers erneut vergeben werden – nie zwei gleichzeitig', () => {
+    let s = day();
+    s = runQuest(s, 'q-koordination-1', everyone);
+    const first = Object.values(s.players).find((p) => p.role === 'scout')!;
+    // Zweite Freischaltung, solange der Späher lebt → nicht möglich
+    let again = JSON.parse(JSON.stringify(s)) as GameState;
+    again = runQuest(again, 'q-koordination-1', alive(again).map((p) => p.id));
+    expect(Object.values(again.players).filter((p) => p.role === 'scout' && p.alive)).toHaveLength(1);
+    // Besitzer scheidet aus → erneut möglich
+    const dead = JSON.parse(JSON.stringify(s)) as GameState;
+    dead.players[first.id]!.alive = false;
+    const regrant = runQuest(dead, 'q-koordination-1', alive(dead).map((p) => p.id));
+    const living = Object.values(regrant.players).filter((p) => p.role === 'scout' && p.alive);
+    expect(living).toHaveLength(1);
+    expect(living[0]!.id).not.toBe(first.id);
+  });
+  it('Das Moment-Format ist für alle gleich: Sound-/Haptik-Zeitpunkt und Dauer identisch', () => {
+    const a = runQuest(day(), 'q-koordination-1', everyone);
+    expect(a.moment!.showUntil - a.moment!.at).toBe(a.rules.durations.momentMs);
   });
 });
 
@@ -86,7 +110,7 @@ describe('Grenzgänger im Rudel', () => {
     // Späher sieht ihn als Rudel
     let n = forceNight(pack());
     n = must(n, 'p4', { type: 'night_action', ability: 'scout', target: 'p3' }, T0 + 5_000_000);
-    n = tick(n, T0 + 9_000_000);
+    n = endNight(n, T0 + 9_000_000);
     expect(privateView(n, 'p4')!.notes.find((x) => x.kind === 'inspect_result')!.data.faction).toBe('pack');
   });
 });
@@ -98,7 +122,7 @@ describe('Fähigkeiten sind datengetrieben konfigurierbar', () => {
     s = forceNight(s);
     expect(s.players.p3!.uses.scout).toBe(1);
     s = must(s, 'p3', { type: 'night_action', ability: 'scout', target: 'p1' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(s.players.p3!.uses.scout).toBe(0);
     expect(privateView(forceNight(s, T0 + 20_000_000), 'p3')!.abilities).toHaveLength(0);
   });
@@ -110,7 +134,7 @@ describe('Fähigkeiten sind datengetrieben konfigurierbar', () => {
       s = forceNight(s, T0 + 5_000_000 + i * 1_000_000);
       s = must(s, 'p1', { type: 'pack_target', target: `p${5 + i}` }, T0 + 5_000_000 + i * 1_000_000);
       s = must(s, 'p3', { type: 'night_action', ability: 'scout', target: 'p1' }, T0 + 5_000_000 + i * 1_000_000);
-      s = tick(s, T0 + 5_000_000 + i * 1_000_000 + 200_000);
+      s = endNight(s, T0 + 5_000_000 + i * 1_000_000 + 200_000);
       s = JSON.parse(JSON.stringify(s));
       s.phase = { kind: 'day', startedAt: 0, councilBy: null, nightAt: null, quest: null, questTimes: [], councilQueued: false };
     }
@@ -121,7 +145,7 @@ describe('Fähigkeiten sind datengetrieben konfigurierbar', () => {
     let s = withRoles(newGame(10, 'c3', { rules: rules as never }), { p1: 'wolf', p2: 'wolf', p3: 'guardian' });
     s = forceNight(s);
     s = must(s, 'p3', { type: 'night_action', ability: 'protect', target: 'p5' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     s = forceNight(s, T0 + 20_000_000);
     expect(applyCommand(s, 'p3', { type: 'night_action', ability: 'protect', target: 'p5' }, T0 + 20_000_000).ok).toBe(true);
   });
@@ -130,7 +154,7 @@ describe('Fähigkeiten sind datengetrieben konfigurierbar', () => {
     let s = withRoles(newGame(10, 'c4', { rules: rules as never }), { p1: 'wolf', p2: 'wolf', p3: 'hunter' });
     s = forceNight(s);
     s = must(s, 'p1', { type: 'pack_target', target: 'p3' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(s.players.p3!.alive).toBe(false);
     expect(s.hunterShots).toEqual({});
   });

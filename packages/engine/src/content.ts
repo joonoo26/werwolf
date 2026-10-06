@@ -68,7 +68,7 @@ export const QUESTS: QuestDef[] = [
     goal: 'Findet ohne Absprache dieselbe Antwort.',
     task: 'Alle denken sich gleichzeitig eine Farbe, eine Zahl von 1 bis 10 und ein Tier aus. Auf „Jetzt“ sagen alle laut ihre Antworten. Wie viele Übereinstimmungen gibt es?',
     finish: 'Fertig nach drei Runden. Ihr dürft nach jeder Runde nur schweigen und nicken.',
-    reward: { kind: 'role' },
+    reward: { kind: 'unlock_role', role: 'scout' },
   },
   {
     id: 'q-koordination-2',

@@ -43,8 +43,15 @@ describe('Zufallsspiele (Invarianten)', () => {
     for (const seed of seeds.slice(0, 25)) {
       simulate(seed, 9 + (seed.length % 5), 'classic', (s) => {
         if (s.phase.kind === 'ended') return;
-        const json = JSON.stringify(publicView(s));
-        expect(json).not.toMatch(ROLE_WORDS);
+        const view = publicView(s);
+        // Aufdeckung ausgeschiedener Spieler und die öffentlich angesagte Rolle einer Quest sind erlaubt –
+        // lebende Spieler dürfen aber nie aufgedeckt sein.
+        for (const p of view.players) expect(p.revealed === null).toBe(p.alive);
+        const copy = JSON.parse(JSON.stringify(view));
+        for (const p of copy.players) delete p.revealed;
+        if (copy.moment) { delete copy.moment.role; delete copy.moment.announced; }
+        for (const e of copy.events) if (e.data) delete e.data.role;
+        expect(JSON.stringify(copy)).not.toMatch(ROLE_WORDS);
       });
     }
   });
@@ -59,6 +66,7 @@ describe('Zufallsspiele (Invarianten)', () => {
           delete copy.role;
           delete copy.faction;
           delete copy.abilities; // eigene Fähigkeiten nennen die eigene Rolle
+          delete copy.panel; // eigener Moment-Inhalt (z. B. „Du bist …")
           for (const n of copy.notes) { delete n.data.ability; if (n.kind === 'role' || n.kind === 'role_gained') delete n.data.role; }
           const json = JSON.stringify(copy);
           expect(json).not.toMatch(/"(villager|wolf|scout|tracker|alchemist|guardian|borderwalker|hunter|shadowwolf)"/);

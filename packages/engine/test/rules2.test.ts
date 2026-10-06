@@ -5,7 +5,7 @@ import { Rng, seedToState } from '../src/rng';
 import { DEFAULT_RULES, wolfCount } from '../src/rules';
 import { publicView, privateView } from '../src/views';
 import type { GameState } from '../src/types';
-import { alive, electSpeaker, forceNight, must, newGame, roster, T0, withRoles } from './helpers';
+import { alive, electSpeaker, endNight, forceNight, must, newGame, roster, T0, withRoles } from './helpers';
 
 describe('Konfigurierte Startwerte (Entscheidung v0.4+)', () => {
   it('Rudelgröße je Spielerzahl', () => {
@@ -13,7 +13,7 @@ describe('Konfigurierte Startwerte (Entscheidung v0.4+)', () => {
     for (const [n, w] of Object.entries(expected)) expect(wolfCount(Number(n), DEFAULT_RULES)).toBe(w);
   });
   it('Fährtenleser hat 2 Nutzungen; Jäger ist standardmäßig deaktiviert; Schattenwolf erst ab 9', () => {
-    expect(DEFAULT_RULES.roles.tracker.abilities[0]!.uses).toBe(2);
+    expect(DEFAULT_RULES.roles.tracker.abilities[0]!.uses).toBe(1); // genau 1 Einsatz pro Besitzer
     expect(DEFAULT_RULES.roles.hunter.enabled).toBe(false);
     expect(DEFAULT_RULES.roles.borderwalker.enabled).toBe(false); // vollständig implementiert, standardmäßig aus
     expect(DEFAULT_RULES.roles.shadowwolf.minPlayers).toBe(9);
@@ -67,29 +67,11 @@ describe('Konfigurierte Startwerte (Entscheidung v0.4+)', () => {
   });
 });
 
-describe('Alchemistin: nur ein Trank pro Nacht', () => {
-  it('eine zweite Trank-Wahl ersetzt die erste; nur ein Effekt tritt ein', () => {
-    let s = withRoles(newGame(10, 'alc'), { p1: 'wolf', p2: 'wolf', p3: 'alchemist' });
-    s = electSpeaker(s, T0 + 1, 'p9');
-    s = forceNight(s);
-    s = must(s, 'p1', { type: 'pack_target', target: 'p5' }, T0 + 5_000_000);
-    s = must(s, 'p3', { type: 'night_action', ability: 'potion_protect', target: 'p5' }, T0 + 5_000_000);
-    s = must(s, 'p3', { type: 'night_action', ability: 'potion_strike', target: 'p6' }, T0 + 5_000_000);
-    expect(Object.keys(s.nightActions.p3!)).toEqual(['potion_strike']);
-    expect(privateView(s, 'p3')!.abilities.filter((a) => a.choice).map((a) => a.id)).toEqual(['potion_strike']);
-    s = tick(s, T0 + 9_000_000);
-    expect(s.players.p5!.alive).toBe(false); // nicht geschützt
-    expect(s.players.p6!.alive).toBe(false); // Angriffstrank
-    expect(s.players.p3!.uses.potion_protect).toBe(1); // unverbraucht
-    expect(s.players.p3!.uses.potion_strike).toBe(0);
-  });
-});
-
 describe('Grenzgänger und Rudelstärke', () => {
   const only = (flag: boolean) => ({
     borderwalkerReplacesWolf: flag,
     startSpecials: { medium: [{ count: 1, weight: 1 }], large: [{ count: 1, weight: 1 }] },
-    roles: { ...Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'hunter', 'shadowwolf'].map((r) => [r, { enabled: false }])), borderwalker: { enabled: true } },
+    roles: { ...Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'hunter', 'shadowwolf', 'observer'].map((r) => [r, { enabled: false }])), borderwalker: { enabled: true } },
   });
   it('ersetzt einen Wolf-Platz: maximale Rudelgröße bleibt die der Tabelle', () => {
     for (const n of [8, 9, 10, 12, 14]) {
@@ -107,16 +89,16 @@ describe('Grenzgänger und Rudelstärke', () => {
 });
 
 describe('Rollen-Momente (eine Wahrscheinlichkeit)', () => {
-  it('Impuls erscheint bei jedem Moment; noRoleChance entscheidet allein über die Vergabe', () => {
+  it('Der Moment erscheint immer; noRoleChance entscheidet allein über die Vergabe', () => {
     for (const noRole of [0, 1]) {
       let s = withRoles(newGame(10, 'mom', { rules: { moments: { after_first_council: { noRoleChance: noRole } }, startSpecials: { medium: [{ count: 0, weight: 1 }] } } as never }), { p1: 'wolf', p2: 'wolf' });
       s = electSpeaker(s, T0 + 1, 'p9');
-      const before = s.events.filter((e) => e.kind === 'impulse').length;
+      const before = s.events.filter((e) => e.kind === 'moment').length;
       const specialsBefore = Object.values(s.players).filter((p) => DEFAULT_RULES.roles[p.role].special).length;
       s.firstCouncilDone = false;
       // Dorfrat bis zum Ergebnis erzwingen
       for (let i = 0; i < 12 && s.phase.kind !== 'dusk'; i++) s = tick(s, T0 + 100_000 * (i + 2), { force: true });
-      expect(s.events.filter((e) => e.kind === 'impulse').length).toBe(before + 1);
+      expect(s.events.filter((e) => e.kind === 'moment').length).toBe(before + 1);
       const specialsAfter = Object.values(s.players).filter((p) => DEFAULT_RULES.roles[p.role].special).length;
       expect(specialsAfter - specialsBefore).toBe(noRole === 1 ? 0 : 1);
     }
@@ -187,7 +169,7 @@ describe('Kleingruppen 4–6 (Balance offen, konfigurierbar)', () => {
       s = electSpeaker(s, T0 + 1, 'p2');
       s = forceNight(s);
       s = must(s, 'p1', { type: 'pack_target', target: 'p3' }, T0 + 5_000_000);
-      return tick(s, T0 + 9_000_000);
+      return endNight(s, T0 + 9_000_000);
     };
     expect(night().players.p3!.alive).toBe(false);
     expect(night({ nightKillInterval: { 5: 2 } }).players.p3!.alive).toBe(false); // Nacht 1 tötet
@@ -198,7 +180,7 @@ describe('Kleingruppen 4–6 (Balance offen, konfigurierbar)', () => {
     s.day = 2;
     s = forceNight(s);
     s = must(s, 'p1', { type: 'pack_target', target: 'p3' }, T0 + 5_000_000);
-    s = tick(s, T0 + 9_000_000);
+    s = endNight(s, T0 + 9_000_000);
     expect(s.players.p3!.alive).toBe(true);
     expect(publicView(s).morningDeaths).toEqual([]);
   });

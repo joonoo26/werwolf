@@ -19,7 +19,9 @@ function role(def: Partial<RoleDef> & Pick<RoleDef, 'id' | 'faction'>): RoleDef 
     recipient: def.faction === 'pack' ? 'wolf' : 'villager',
     startChoice: false,
     abilities: [],
-    maxAbilitiesPerNight: null,
+    maxLivingHolders: 1,
+    maxGrants: null,
+    announcedAtStart: false,
     ...def,
   };
 }
@@ -41,29 +43,31 @@ export const DEFAULT_RULES: Rules = {
     }),
     tracker: role({
       id: 'tracker', faction: 'village', weight: 2, minPlayers: 6,
-      abilities: [ab({ id: 'track', kind: 'inspect_group', uses: 2, groupSize: 3 })],
+      abilities: [ab({ id: 'track', kind: 'inspect_group', uses: 1, groupSize: 3 })],
     }),
     guardian: role({
       id: 'guardian', faction: 'village', weight: 3, minPlayers: 7,
       abilities: [ab({ id: 'protect', kind: 'protect', uses: null, noRepeatTarget: true, allowSelf: true })],
     }),
     alchemist: role({
-      id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8, maxAbilitiesPerNight: 1,
-      abilities: [
-        ab({ id: 'potion_protect', kind: 'protect', uses: 1, allowSelf: true }),
-        ab({ id: 'potion_strike', kind: 'strike', uses: 1 }),
-      ],
+      id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8,
+      // Ausschließlich ein einmaliger Heiltrank (keine Tötungsfähigkeit).
+      abilities: [ab({ id: 'potion_heal', kind: 'heal', uses: 1 })],
     }),
     borderwalker: role({
       id: 'borderwalker', faction: 'village', weight: 1, minPlayers: 8, enabled: false, // vollständig implementiert, standardmäßig deaktiviert (Wirkung wird separat getestet)
-      startChoice: true, unlock: { triggers: ['start'], earliestDay: 1, latestDay: 1 },
+      startChoice: true, announcedAtStart: true, unlock: { triggers: ['start'], earliestDay: 1, latestDay: 1 },
     }),
     hunter: role({
       id: 'hunter', faction: 'village', weight: 2, minPlayers: 8, enabled: false, // technisch vorhanden, standardmäßig deaktiviert
       abilities: [ab({ id: 'last_shot', kind: 'last_shot', uses: 1 })],
     }),
+    observer: role({
+      id: 'observer', faction: 'village', weight: 1, minPlayers: 8, // Mindestspielerzahl: Startwert, offen
+      abilities: [ab({ id: 'observe', kind: 'observe', uses: null, windowMs: 10_000 })],
+    }),
     shadowwolf: role({
-      id: 'shadowwolf', faction: 'pack', weight: 1, minPlayers: 9,
+      id: 'shadowwolf', faction: 'pack', weight: 1, minPlayers: 9, enabled: false, // vorerst nicht im Standardspiel
       abilities: [ab({ id: 'veil', kind: 'veil', uses: 1 })],
     }),
   },
@@ -77,10 +81,10 @@ export const DEFAULT_RULES: Rules = {
   comboLimits: [{ roles: ['scout', 'tracker'], max: { tiny: 1, small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
   moments: {
-    quest_reward: { noRoleChance: 0.3 },
     after_first_council: { noRoleChance: 0.5 },
     day_start: { days: [3], noRoleChance: 0.5 },
   },
+  lookout: { enabled: true },
   durations: {
     speakerElectionMs: 60_000,
     discussionTargetMs: 8 * 60_000,
@@ -90,10 +94,12 @@ export const DEFAULT_RULES: Rules = {
     tiebreakMs: 60_000,
     resultMs: 30_000,
     nightMs: 150_000,
+    healWindowMs: 40_000,
+    observerPingTtlMs: 2_500,
     morningMs: 30_000,
     questMs: 5 * 60_000,
     confirmGraceMs: 60_000,
-    impulseMs: 8_000,
+    momentMs: 20_000,
   },
   evening: {
     minDayMs: 10 * 60_000,
@@ -131,5 +137,5 @@ export function wolfCount(playerCount: number, rules: Rules): number {
   return rules.wolvesByPlayers[playerCount] ?? Math.max(2, Math.round(playerCount / 3.5));
 }
 
-export const ROLE_IDS: RoleId[] = ['villager', 'wolf', 'scout', 'tracker', 'alchemist', 'guardian', 'borderwalker', 'hunter', 'shadowwolf'];
+export const ROLE_IDS: RoleId[] = ['villager', 'wolf', 'scout', 'tracker', 'alchemist', 'guardian', 'borderwalker', 'hunter', 'shadowwolf', 'observer'];
 export const SPECIAL_ROLE_IDS: RoleId[] = ROLE_IDS.filter((r) => DEFAULT_RULES.roles[r].special);

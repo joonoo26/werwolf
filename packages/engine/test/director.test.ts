@@ -7,7 +7,7 @@ import type { GameState, RoleId } from '../src/types';
 import { alive, newGame, roster, T0, withRoles } from './helpers';
 
 const ctx = (over: Partial<Parameters<typeof isRoleAllowed>[1]> = {}) => ({
-  trigger: 'quest_reward' as const, day: 2, playerCount: 10, assigned: [] as RoleId[], aliveCount: 10, ...over,
+  trigger: 'quest_reward' as const, day: 2, playerCount: 10, held: [] as RoleId[], aliveCount: 10, ...over,
 });
 
 describe('Rollen-Pools und Freischaltung (vorab konfiguriert)', () => {
@@ -31,11 +31,17 @@ describe('Rollen-Pools und Freischaltung (vorab konfiguriert)', () => {
     expect(isRoleAllowed(r.roles.guardian, ctx({ day: 3 }), r)).toBe(true);
   });
   it('wendet vorab definierte Kombinationslimits an (Späher + Fährtenleser)', () => {
-    expect(isRoleAllowed(DEFAULT_RULES.roles.tracker, ctx({ assigned: ['scout'], playerCount: 9 }), DEFAULT_RULES)).toBe(false);
-    expect(isRoleAllowed(DEFAULT_RULES.roles.tracker, ctx({ assigned: ['scout'], playerCount: 12 }), DEFAULT_RULES)).toBe(true);
+    expect(isRoleAllowed(DEFAULT_RULES.roles.tracker, ctx({ held: ['scout'], playerCount: 9 }), DEFAULT_RULES)).toBe(false);
+    expect(isRoleAllowed(DEFAULT_RULES.roles.tracker, ctx({ held: ['scout'], playerCount: 12 }), DEFAULT_RULES)).toBe(true);
   });
-  it('vergibt jede Sonderrolle höchstens einmal', () => {
-    expect(isRoleAllowed(DEFAULT_RULES.roles.guardian, ctx({ assigned: ['guardian'] }), DEFAULT_RULES)).toBe(false);
+  it('höchstens ein lebender Träger je Rolle; nach dem Tod des Trägers ist eine erneute Vergabe möglich', () => {
+    expect(isRoleAllowed(DEFAULT_RULES.roles.guardian, ctx({ held: ['guardian'] }), DEFAULT_RULES)).toBe(false);
+    expect(isRoleAllowed(DEFAULT_RULES.roles.guardian, ctx({ held: [] }), DEFAULT_RULES)).toBe(true); // Träger ausgeschieden
+    const once = mergeRules({ roles: { guardian: { maxGrants: 1 } } } as never);
+    expect(isRoleAllowed(once.roles.guardian, { ...ctx({ held: [] }), grants: { guardian: 1 } }, once)).toBe(false);
+  });
+  it('Späher/Fährtenleser-Kombination zählt nur lebende Träger („gemeinsam aktiv")', () => {
+    expect(isRoleAllowed(DEFAULT_RULES.roles.tracker, ctx({ held: [], playerCount: 9 }), DEFAULT_RULES)).toBe(true);
   });
   it('führt im Finale (konfigurierbar) keine neue Rolle ein', () => {
     expect(isRoleAllowed(DEFAULT_RULES.roles.guardian, ctx({ aliveCount: 5 }), DEFAULT_RULES)).toBe(false);
@@ -91,7 +97,7 @@ describe('Startverteilung', () => {
     }
   });
   it('deaktivierte Rollen werden nie vergeben', () => {
-    const roles = Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'borderwalker', 'shadowwolf'].map((r) => [r, { enabled: false }]));
+    const roles = Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'borderwalker', 'shadowwolf', 'observer'].map((r) => [r, { enabled: false }]));
     for (let i = 0; i < 100; i++) {
       const s = createGame({ roster: roster(12), hostId: 'p1', mode: 'classic', seed: 'off' + i, now: T0, rules: { roles } as never });
       for (const p of Object.values(s.players)) expect(['villager', 'wolf']).toContain(p.role);
@@ -99,13 +105,14 @@ describe('Startverteilung', () => {
   });
 });
 
-describe('Rollen-Momente: Impulse verraten nicht, ob eine Rolle vergeben wurde', () => {
+describe('Rollen-Momente: verraten nicht, ob eine Rolle vergeben wurde', () => {
   it('bei jedem Moment erscheint derselbe Impuls – auch wenn keine Rolle vergeben wird', () => {
     const rules = { moments: { day_start: { noRoleChance: 1 } } } as never;
     const none = createGame({ roster: roster(10), hostId: 'p1', mode: 'classic', seed: 'm', now: T0, rules });
     // Zwei Partien mit identischem Ablauf, aber noRoleChance 1 vs 0: öffentliche Sicht ist identisch strukturiert
     const rules1 = { moments: { day_start: { noRoleChance: 0 } } } as never;
     const some = createGame({ roster: roster(10), hostId: 'p1', mode: 'classic', seed: 'm', now: T0, rules: rules1 });
-    expect(none.impulse?.textKey).toBe(some.impulse?.textKey);
+    expect(none.moment?.kind).toBe(some.moment?.kind);
+    expect(none.moment?.showUntil! - none.moment?.at!).toBe(some.moment?.showUntil! - some.moment?.at!);
   });
 });

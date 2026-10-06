@@ -197,7 +197,6 @@ export function simulateGame(o: SimOptions): GameResult {
         for (const id of living()) {
           const pv = privateView(s, id);
           if (!pv) continue;
-          const accusedAlive = aliveAccused().filter((t) => t !== id);
           for (const a of pv.abilities) {
             switch (a.kind) {
               case 'inspect': {
@@ -215,11 +214,7 @@ export function simulateGame(o: SimOptions): GameResult {
                 const infoAlive = living().filter((t) => outed.has(t) && t !== a.forbidden);
                 const pool = a.targets.filter((t) => t !== a.forbidden);
                 const t = infoAlive.length && rng.chance(0.6) ? rng.pick(infoAlive) : rng.pick(pool);
-                if (a.id === 'protect' || (infoAlive.length && rng.chance(0.25))) cmd(id, { type: 'night_action', ability: a.id, target: t });
-                break;
-              }
-              case 'strike': {
-                if (accusedAlive.length) cmd(id, { type: 'night_action', ability: a.id, target: accusedAlive[0]! });
+                cmd(id, { type: 'night_action', ability: a.id, target: t });
                 break;
               }
               case 'veil': {
@@ -229,7 +224,11 @@ export function simulateGame(o: SimOptions): GameResult {
             }
           }
         }
-        advance(s.rules.durations.nightMs + 1);
+        advance(s.rules.durations.nightMs + 1); // Rudelsperre → Heil-Fenster
+        for (const id of living()) {
+          if (privateView(s, id)?.heal) cmd(id, { type: 'heal_decision', save: rng.chance(0.5) });
+        }
+        advance(s.rules.durations.healWindowMs + 1);
         readNewNotes(noteMark);
         trackRoles();
         break;

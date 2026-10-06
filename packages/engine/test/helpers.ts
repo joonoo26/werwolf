@@ -133,13 +133,21 @@ export function simulate(
       if (c.step === 'result') for (const hid of Object.keys(s.hunterShots)) if (rng.chance(0.7)) act(hid, { type: 'hunter_shoot', target: rng.pick(living) });
     } else if (phase.kind === 'dusk') {
       for (const id of living) if (rng.chance(0.7)) act(id, { type: 'ready', topic: 'advance', value: true });
+    } else if (phase.kind === 'night' && phase.stage === 'heal') {
+      for (const id of living) if (privateView(s, id)?.heal && rng.chance(0.7)) act(id, { type: 'heal_decision', save: rng.chance(0.5) });
     } else if (phase.kind === 'night') {
       for (const id of living) {
         const me = s.players[id]!;
-        const others = living.filter((x) => x !== id);
+        const need = Math.min(s.packSeats, living.length - 1);
+        if (rng.chance(0.7)) act(id, { type: 'suspect', targets: rng.shuffle(living.filter((x) => x !== id)).slice(0, need) });
         if (me.faction === 'pack') {
           const targets = alive(s).filter((p) => p.faction !== 'pack').map((p) => p.id);
           if (targets.length) act(id, { type: 'pack_target', target: rng.pick(targets) });
+          if (rng.chance(0.3)) act(id, { type: 'lookout' });
+        }
+        if (privateView(s, id)?.observation?.available && rng.chance(0.6)) {
+          act(id, { type: 'observe', action: 'start' });
+          if (rng.chance(0.5)) act(id, { type: 'observe', action: 'stop' });
         }
         for (const spec of privateView(s, id)?.abilities ?? []) {
           if (!rng.chance(0.8)) continue;
@@ -169,8 +177,16 @@ export function simulate(
 /** Testhilfe: setzt die Nacht direkt (ohne Dorfrat, der zufällig jemanden verbannen würde). */
 export function forceNight(s: GameState, now = T0 + 5_000_000): GameState {
   const c = JSON.parse(JSON.stringify(s)) as GameState;
-  c.phase = { kind: 'night', startedAt: now, endsAt: now + c.rules.durations.nightMs };
+  c.phase = { kind: 'night', startedAt: now, endsAt: now + c.rules.durations.nightMs, stage: 'act' };
+  c.night = { lockedTarget: null, healSave: null, lookoutUsed: false, observers: {} };
   for (const p of Object.values(c.players)) p.sidePending = false;
   c.nightActions = {};
   return c;
+}
+
+/** Beendet die Nacht: Handlungsphase → Rudelsperre (Heil-Fenster) → Auflösung. */
+export function endNight(s: GameState, t: number): GameState {
+  let st = tick(s, t);
+  if (st.phase.kind === 'night' && st.phase.stage === 'heal') st = tick(st, t + st.rules.durations.healWindowMs + 1);
+  return st;
 }
