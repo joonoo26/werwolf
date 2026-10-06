@@ -82,12 +82,13 @@ describe('Geheimhaltung (RLS)', () => {
     await expect(db.user(w.users[0]!).q('select state from public.game_secret')).rejects.toThrow(/permission denied/);
   });
 
-  it('Ausgeschiedene Spieler verlieren den Zugriff auf den Privatbereich', async () => {
+  it('Ausgeschiedene sehen nur noch ihre eigene Privatsicht, aber keine Chats mehr', async () => {
     const { w } = await started(8);
     await unlock(w, 3);
     expect(await db.user(w.users[3]!).q('select * from public.player_private')).toHaveLength(1);
     await db.admin(`update public.players set alive = false where id = $1`, [w.players[3]]);
-    expect(await db.user(w.users[3]!).q('select * from public.player_private')).toHaveLength(0);
+    expect(await db.user(w.users[3]!).q('select * from public.player_private')).toHaveLength(1);
+    expect(await db.user(w.users[3]!).q('select * from public.channels')).toHaveLength(0);
   });
 });
 
@@ -235,5 +236,19 @@ describe('Nebenläufigkeit & Zeit', () => {
     await db.admin(`update public.rooms set status = 'ended' where id = $1`, [w.roomId]);
     await unlock(w, 1);
     expect(await db.user(w.users[1]!).q('select * from public.player_private')).toHaveLength(0);
+  });
+});
+
+describe('iPad-Dorfanzeige', () => {
+  it('sieht öffentliche Daten, aber nie Privates oder Chats – und ist kein Spieler', async () => {
+    const { w } = await started(8);
+    const display = db.user(randomUUID());
+    await display.rpc('join_display', w.code);
+    expect(await display.q('select * from public.public_state')).toHaveLength(1);
+    expect((await display.q('select * from public.players')).length).toBe(8);
+    expect(await display.q('select * from public.player_private')).toHaveLength(0);
+    await expect(display.rpc('verify_pin', w.roomId, '1234')).rejects.toThrow(/not_in_room/);
+    const r = await handleCommand(db.store, { roomId: w.roomId, userId: (display as { uid: string }).uid, now: NOW, command: { type: 'vote_speaker', target: w.players[1]! } });
+    expect(r).toMatchObject({ ok: false, code: 'not_a_player' });
   });
 });

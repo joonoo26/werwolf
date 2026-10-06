@@ -151,7 +151,8 @@ as $$
   );
 $$;
 
--- Eigener Spieler darf Privates sehen: lebendig, PIN-entsperrt, Spiel läuft.
+-- Eigener Spieler darf die eigene Privatsicht sehen: PIN-entsperrt, Spiel läuft. Ausgeschiedene
+-- behalten nur ihre EIGENE Sicht (z. B. der letzte Schuss des Jägers); Chats sind für sie gesperrt.
 create function private.can_see_private(p_player uuid)
 returns boolean
 language sql stable security definer set search_path = ''
@@ -163,7 +164,6 @@ as $$
     join public.rooms r on r.id = p.room_id
     where p.id = p_player
       and p.user_id = (select auth.uid())
-      and p.alive
       and r.status = 'running'
       and s.unlocked_until is not null
       and s.unlocked_until > now()
