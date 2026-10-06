@@ -176,10 +176,109 @@ describe('Kleingruppen (4–6 Startspieler)', () => {
 });
 
 describe('Konfigurationswarnungen zum Reward Director', () => {
-  it('warnt, wenn die erste Quest keine Rolle zur Auswahl hat (4–5 Spieler: Mindestspielerzahlen) bzw. das Budget überschritten wird', async () => {
+  it('warnt, wenn die erste Quest keine Rolle zur Auswahl hat bzw. das Budget überschritten wird', async () => {
     const { validateRoleConfig } = await import('../src/roleConfig');
-    expect(validateRoleConfig(5, {}).map((w) => w.code)).toContain('no_role_available_for_quest');
+    const off = { scout: 'off', tracker: 'off', guardian: 'off', alchemist: 'off', observer: 'off' } as const;
+    expect(validateRoleConfig(5, off).map((w) => w.code)).toContain('no_role_available_for_quest');
+    expect(validateRoleConfig(4, {}).map((w) => w.code)).not.toContain('no_role_available_for_quest');
     expect(validateRoleConfig(10, {}).map((w) => w.code)).not.toContain('no_role_available_for_quest');
     expect(validateRoleConfig(4, { scout: 'guaranteed', tracker: 'guaranteed', guardian: 'guaranteed' }).map((w) => w.code)).toContain('guaranteed_exceeds_budget');
+  });
+});
+
+describe('Mindestspielerzahlen / Kleingruppen-Pool (konfigurierbare Defaults)', () => {
+  const pool = (n: number) => {
+    const roles = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      const s = electSpeaker(withRoles(newGame(n, `pool${n}-${i}`), { p1: 'wolf' }), T0 + 1, 'p3');
+      const c = clone(s);
+      for (const p of Object.values(c.players)) if (c.rules.roles[p.role].special) p.role = 'villager';
+      // Alle aktuell erlaubten Rollen für die erste Quest sammeln
+      const r = runQuest(c, 'q-tabu-1', ids(c));
+      for (const p of specials(r)) roles.add(p.role);
+    }
+    return [...roles].sort();
+  };
+  it('4 Spieler: Späher; Alchemistin und Fährtenleser noch nicht', () => {
+    expect(pool(4)).toEqual(['scout']);
+  });
+  it('5 Spieler: Späher, Alchemistin und Fährtenleser verfügbar', () => {
+    expect(pool(5)).toEqual(['alchemist', 'scout', 'tracker']);
+  });
+  it('Beobachter ab 8, Jäger ab 8 (deaktiviert)', () => {
+    const r = newGame(8).rules.roles;
+    expect(r.observer.minPlayers).toBe(8);
+    expect(r.hunter.minPlayers).toBe(8);
+    expect(pool(7)).not.toContain('observer');
+  });
+  it('Späher hat bei 4 Spielern höchstens 1 Nutzung (automatisch), sonst 2 – konfigurierbar', async () => {
+    const { initialUses } = await import('../src/engine');
+    const r = newGame(4).rules;
+    expect(initialUses('scout', r, 4)).toEqual({ scout: 1 });
+    expect(initialUses('scout', r, 5)).toEqual({ scout: 2 });
+    const cfg = newGame(4, 'x', { rules: { roles: { scout: { abilities: [{ id: 'scout', kind: 'inspect', uses: 2, usesByPlayers: { 4: 2 } }] } } } as never }).rules;
+    expect(initialUses('scout', cfg, 4)).toEqual({ scout: 2 });
+    // tatsächlich vergebener Späher bei 4 Spielern
+    const s = electSpeaker(withRoles(newGame(4, 'sc'), { p1: 'wolf' }), T0 + 1, 'p3');
+    const r1 = runQuest(s, 'q-tabu-1', ids(s));
+    const sc = specials(r1).find((p) => p.role === 'scout')!;
+    expect(sc.uses.scout).toBe(1);
+  });
+  it('Host darf abweichen: Rolle unter der Mindestgröße wird möglich/garantiert, Warnung statt Blockade; Nutzungszahl-Override entfällt', async () => {
+    const { validateRoleConfig } = await import('../src/roleConfig');
+    const { createGame } = await import('../src/engine');
+    const s = createGame({ roster: Array.from({ length: 5 }, (_, i) => ({ id: `p${i + 1}`, name: `S${i + 1}` })), hostId: 'p1', mode: 'classic', seed: 'h', now: T0, roleModes: { observer: 'guaranteed' } });
+    expect(Object.values(s.players).some((p) => p.role === 'observer')).toBe(true);
+    expect(validateRoleConfig(5, { observer: 'guaranteed' }).map((w) => w.code)).toContain('role_below_min_players');
+    const sc = createGame({ roster: Array.from({ length: 4 }, (_, i) => ({ id: `p${i + 1}`, name: `S${i + 1}` })), hostId: 'p1', mode: 'classic', seed: 'h2', now: T0, roleModes: { scout: 'guaranteed' } });
+    expect(Object.values(sc.players).find((p) => p.role === 'scout')!.uses.scout).toBe(2);
+  });
+  it('Warnungen sind verständliche deutsche Texte', async () => {
+    const { warningText } = await import('../src/roleConfig');
+    expect(warningText({ code: 'role_below_min_players', roles: ['observer'] })).toMatch(/empfohlen/);
+  });
+});
+
+describe('Später-Slot für die erste Quest (reserviert)', () => {
+  it('beim Start reserviert; ein Rollen-Moment verbraucht den letzten Slot nicht', () => {
+    let s = day(6);
+    expect(s.questSlotReserved).toBe(true);
+    expect(s.rules.maxLaterSpecials.tiny).toBe(1);
+    for (let i = 0; i < 20; i++) expect(pickLateAssignment(s, 'after_first_council', new Rng(seedToState(`r${i}`)))).toBeNull();
+    s = runQuest(s, 'q-tabu-1', ids(s));
+    expect(s.moment?.kind).toBe('quest_unlock');
+    expect(s.questSlotReserved).toBe(false);
+  });
+  it('mit mehr Slots (groß: 3) bleibt einer frei, bis die erste Quest abgewickelt ist', () => {
+    const s = day(12);
+    const rng = (i: number) => new Rng(seedToState(`l${i}`));
+    let c = clone(s);
+    const a1 = pickLateAssignment(c, 'after_first_council', rng(1));
+    expect(a1).not.toBeNull();
+    c.laterGrants = 1; c.day += 1;
+    expect(pickLateAssignment(c, 'day_start', rng(2))).not.toBeNull();
+    c.laterGrants = 2; c.day += 1;
+    expect(pickLateAssignment(c, 'day_start', rng(3))).toBeNull(); // letzter Slot reserviert
+    expect(pickLateAssignment(c, 'quest_reward', rng(4))).not.toBeNull(); // die Quest darf ihn nutzen
+  });
+  it('wird auch bei legitimem Fallback aufgehoben (keine Rolle zulässig)', () => {
+    const s = day(10, { roles: { scout: { enabled: false }, tracker: { enabled: false }, guardian: { enabled: false }, alchemist: { enabled: false }, observer: { enabled: false } } });
+    const r = runQuest(s, 'q-tabu-1', ids(s));
+    expect(r.moment?.kind).toBe('hint');
+    expect(r.questSlotReserved).toBe(false);
+  });
+  it('eine gescheiterte Quest hebt die Reservierung nicht auf; ohne Garantie gibt es keine', () => {
+    const s = day(6);
+    expect(runQuest(s, 'q-tabu-1', ['p1']).questSlotReserved).toBe(true);
+    expect(day(6, { roleRewards: { firstSuccessfulQuestGuaranteed: false } }).questSlotReserved).toBe(false);
+  });
+  it('Budget bleibt Obergrenze auch in Kleingruppen: 4 Spieler erzeugen nicht automatisch zwei Rollen', () => {
+    let two = 0;
+    for (let i = 0; i < 40; i++) {
+      const s = electSpeaker(withRoles(newGame(4, `c4-${i}`), {}), T0 + 1, 'p3');
+      expect(specials(s).length).toBeLessThanOrEqual(1);
+      if (specials(s).length === 1) two++;
+    }
+    expect(two).toBeLessThan(40); // Startrolle ist Zufall, nicht Ziel
   });
 });

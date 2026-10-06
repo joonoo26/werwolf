@@ -40,11 +40,12 @@ export const DEFAULT_RULES: Rules = {
     villager: role({ id: 'villager', faction: 'village', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     wolf: role({ id: 'wolf', faction: 'pack', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     scout: role({
-      timing: { early: 2, mid: 1, late: 1 }, id: 'scout', faction: 'village', weight: 1, minPlayers: 6,
-      abilities: [ab({ id: 'scout', kind: 'inspect', uses: 2 })],
+      timing: { early: 2, mid: 1, late: 1 }, id: 'scout', faction: 'village', weight: 1, minPlayers: 4, // Kleingruppen-Default: ab 4 verfügbar
+      // Bei 4 Spielern ist der Späher besonders stark: im automatischen Modus nur 1 Nutzung (konfigurierbar).
+      abilities: [ab({ id: 'scout', kind: 'inspect', uses: 2, usesByPlayers: { 4: 1 } })],
     }),
     tracker: role({
-      timing: { early: 2, mid: 1, late: 1 }, id: 'tracker', faction: 'village', weight: 2, minPlayers: 6,
+      timing: { early: 2, mid: 1, late: 1 }, id: 'tracker', faction: 'village', weight: 2, minPlayers: 5, // Kleingruppen-Default: ab 5
       abilities: [ab({ id: 'track', kind: 'inspect_group', uses: 1, groupSize: 3 })],
     }),
     guardian: role({
@@ -52,7 +53,7 @@ export const DEFAULT_RULES: Rules = {
       abilities: [ab({ id: 'protect', kind: 'protect', uses: null, noRepeatTarget: true, allowSelf: true })],
     }),
     alchemist: role({
-      timing: { early: 2, mid: 2, late: 1 }, id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8,
+      timing: { early: 2, mid: 2, late: 1 }, id: 'alchemist', faction: 'village', weight: 2, minPlayers: 5, // Kleingruppen-Default: ab 5
       // Ausschließlich ein einmaliger Heiltrank (keine Tötungsfähigkeit).
       abilities: [ab({ id: 'potion_heal', kind: 'heal', uses: 1 })],
     }),
@@ -88,7 +89,8 @@ export const DEFAULT_RULES: Rules = {
     noRoleRewardAfterRoleReward: true,
     maxNewRolesPerDay: 1,
     fallback: { kind: 'hint' },
-    // Spielphasen und Timing-Faktoren der Rollen sind Startwerte (offen, siehe OPEN_DECISIONS).
+    // Playtest-/Tuningwerte (akzeptierte Defaults, KEINE endgültige Balance): früh bis Tag 2, mittel bis Tag 4;
+    // Timing-Faktoren der Rollen: bevorzugt 2, normal 1.
     phases: { earlyUntilDay: 2, midUntilDay: 4 },
     smallGroup: { maxStartPlayers: 6, minAlive: 4 },
   },

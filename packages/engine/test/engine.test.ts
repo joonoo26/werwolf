@@ -46,19 +46,19 @@ describe('Spielstart', () => {
       const roles = specials.map((p) => p.role);
       expect(new Set(roles).size).toBe(roles.length);
       if (n <= 7) expect(specials.length).toBeLessThanOrEqual(1);
-      if (n <= 5) expect(specials.length).toBe(0); // keine Rollen konfiguriert, die dort erlaubt sind
-      else if (n <= 10) expect(specials.length).toBeLessThanOrEqual(2);
+      if (n <= 10) expect(specials.length).toBeLessThanOrEqual(2);
       else {
         expect(specials.length).toBeGreaterThanOrEqual(1);
         expect(specials.length).toBeLessThanOrEqual(2);
       }
     }
   });
-  it('vergibt Jäger/Alchemistin/Grenzgänger/Schattenwolf nie in kleinen Gruppen', () => {
+  it('vergibt Jäger/Grenzgänger/Schattenwolf nie in kleinen Gruppen (Alchemistin/Fährtenleser erst ab 5)', () => {
     for (let i = 0; i < 200; i++) {
-      const s = newGame(6 + (i % 2), `small${i}`);
+      const s = newGame(4 + (i % 4), `small${i}`);
       for (const p of Object.values(s.players)) {
-        expect(['hunter', 'alchemist', 'borderwalker', 'shadowwolf']).not.toContain(p.role);
+        expect(['hunter', 'borderwalker', 'shadowwolf']).not.toContain(p.role);
+        if (s.playerCount < 5) expect(['alchemist', 'tracker']).not.toContain(p.role);
       }
     }
   });

@@ -129,15 +129,18 @@ var DEFAULT_RULES = {
       id: "scout",
       faction: "village",
       weight: 1,
-      minPlayers: 6,
-      abilities: [ab({ id: "scout", kind: "inspect", uses: 2 })]
+      minPlayers: 4,
+      // Kleingruppen-Default: ab 4 verfügbar
+      // Bei 4 Spielern ist der Späher besonders stark: im automatischen Modus nur 1 Nutzung (konfigurierbar).
+      abilities: [ab({ id: "scout", kind: "inspect", uses: 2, usesByPlayers: { 4: 1 } })]
     }),
     tracker: role({
       timing: { early: 2, mid: 1, late: 1 },
       id: "tracker",
       faction: "village",
       weight: 2,
-      minPlayers: 6,
+      minPlayers: 5,
+      // Kleingruppen-Default: ab 5
       abilities: [ab({ id: "track", kind: "inspect_group", uses: 1, groupSize: 3 })]
     }),
     guardian: role({
@@ -153,7 +156,8 @@ var DEFAULT_RULES = {
       id: "alchemist",
       faction: "village",
       weight: 2,
-      minPlayers: 8,
+      minPlayers: 5,
+      // Kleingruppen-Default: ab 5
       // Ausschließlich ein einmaliger Heiltrank (keine Tötungsfähigkeit).
       abilities: [ab({ id: "potion_heal", kind: "heal", uses: 1 })]
     }),
@@ -211,7 +215,8 @@ var DEFAULT_RULES = {
     noRoleRewardAfterRoleReward: true,
     maxNewRolesPerDay: 1,
     fallback: { kind: "hint" },
-    // Spielphasen und Timing-Faktoren der Rollen sind Startwerte (offen, siehe OPEN_DECISIONS).
+    // Playtest-/Tuningwerte (akzeptierte Defaults, KEINE endgültige Balance): früh bis Tag 2, mittel bis Tag 4;
+    // Timing-Faktoren der Rollen: bevorzugt 2, normal 1.
     phases: { earlyUntilDay: 2, midUntilDay: 4 },
     smallGroup: { maxStartPlayers: 6, minAlive: 4 }
   },
@@ -316,7 +321,8 @@ function pickLateAssignment(s, trigger, rng, fixedRole) {
   const { rules } = s;
   const playerCount = s.playerCount;
   const band = sizeBand(playerCount);
-  if (s.laterGrants >= rules.maxLaterSpecials[band]) return null;
+  const reserved = s.questSlotReserved && trigger !== "quest_reward" ? 1 : 0;
+  if (s.laterGrants >= rules.maxLaterSpecials[band] - reserved) return null;
   if ((s.grantsByDay[s.day] ?? 0) >= rules.roleRewards.maxNewRolesPerDay) return null;
   const held = living(s).map((p) => p.role);
   const ctx = { trigger, day: s.day, playerCount, held, grants: s.grantsByRole, aliveCount: living(s).length, assigned: assignedSpecials(s) };
@@ -605,9 +611,12 @@ function pushEvent(s, ctx, kind, players, data) {
 function addNote(s, id, day, kind, data) {
   (s.notes[id] ??= []).push({ id: s.nextNoteId++, day, kind, data });
 }
-function initialUses(role2, rules) {
+function initialUses(role2, rules, playerCount) {
   const uses = {};
-  for (const a of rules.roles[role2].abilities) uses[a.id] = a.uses === null ? UNLIMITED : a.uses;
+  for (const a of rules.roles[role2].abilities) {
+    const n = playerCount !== void 0 && a.usesByPlayers && playerCount in a.usesByPlayers ? a.usesByPlayers[playerCount] : a.uses;
+    uses[a.id] = n === null ? UNLIMITED : n;
+  }
   return uses;
 }
 var abilitiesOf = (s, p) => s.rules.roles[p.role].abilities;
@@ -617,7 +626,7 @@ function setRole(s, id, role2, day) {
   p.role = role2;
   p.faction = def.faction;
   p.roleSince = day;
-  p.uses = initialUses(role2, s.rules);
+  p.uses = initialUses(role2, s.rules, s.playerCount);
   p.lastTarget = {};
   p.sidePending = def.startChoice;
 }
@@ -674,7 +683,11 @@ function createGame(input) {
     if (!rules.roles[role2] || !rules.roles[role2].special) continue;
     if (mode === "off") rules.roles[role2].enabled = false;
     else {
-      rules.roles[role2].enabled = true;
+      const def = rules.roles[role2];
+      def.enabled = true;
+      def.minPlayers = Math.min(def.minPlayers, input.roster.length);
+      if (def.maxPlayers !== null && def.maxPlayers < input.roster.length) def.maxPlayers = null;
+      for (const a of def.abilities) delete a.usesByPlayers;
       if (mode === "guaranteed") guaranteed.push(role2);
     }
   }
@@ -715,6 +728,7 @@ function createGame(input) {
     laterGrants: 0,
     grantsByRole: {},
     grantsByDay: {},
+    questSlotReserved: rules.roleRewards.firstSuccessfulQuestGuaranteed,
     questSuccesses: 0,
     lastQuestReward: null,
     bwDecidedAnnounced: false,
@@ -843,6 +857,7 @@ function applyQuestReward(s, ctx, configured) {
   const rr = s.rules.roleRewards;
   s.questSuccesses += 1;
   const first = s.questSuccesses === 1;
+  if (first) s.questSlotReserved = false;
   let reward = configured;
   if (first && rr.firstSuccessfulQuestGuaranteed) reward = { kind: "unlock_role", role: configured?.kind === "unlock_role" ? configured.role : void 0 };
   if (!reward) {

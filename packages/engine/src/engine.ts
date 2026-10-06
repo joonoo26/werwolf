@@ -90,9 +90,12 @@ function addNote(s: GameState, id: PlayerId, day: number, kind: NoteKind, data: 
 }
 
 /** Nutzungen je Fähigkeit aus der Rollen-Konfiguration. */
-export function initialUses(role: RoleId, rules: Rules): PlayerUses {
+export function initialUses(role: RoleId, rules: Rules, playerCount?: number): PlayerUses {
   const uses: PlayerUses = {};
-  for (const a of rules.roles[role].abilities) uses[a.id] = a.uses === null ? UNLIMITED : a.uses;
+  for (const a of rules.roles[role].abilities) {
+    const n = playerCount !== undefined && a.usesByPlayers && playerCount in a.usesByPlayers ? a.usesByPlayers[playerCount]! : a.uses;
+    uses[a.id] = n === null ? UNLIMITED : n;
+  }
   return uses;
 }
 
@@ -104,7 +107,7 @@ function setRole(s: GameState, id: PlayerId, role: RoleId, day: number): void {
   p.role = role;
   p.faction = def.faction;
   p.roleSince = day;
-  p.uses = initialUses(role, s.rules);
+  p.uses = initialUses(role, s.rules, s.playerCount);
   p.lastTarget = {};
   p.sidePending = def.startChoice;
 }
@@ -186,7 +189,12 @@ export function createGame(input: StartInput): GameState {
     if (!rules.roles[role] || !rules.roles[role].special) continue;
     if (mode === 'off') rules.roles[role].enabled = false;
     else {
-      rules.roles[role].enabled = true;
+      // Der Host darf von Empfehlungen/Mindestgrößen abweichen (Balance-Warnung über validateRoleConfig, kein hartes Blockieren).
+      const def = rules.roles[role];
+      def.enabled = true;
+      def.minPlayers = Math.min(def.minPlayers, input.roster.length);
+      if (def.maxPlayers !== null && def.maxPlayers < input.roster.length) def.maxPlayers = null;
+      for (const a of def.abilities) delete a.usesByPlayers;
       if (mode === 'guaranteed') guaranteed.push(role);
     }
   }
@@ -230,6 +238,7 @@ export function createGame(input: StartInput): GameState {
     laterGrants: 0,
     grantsByRole: {},
     grantsByDay: {},
+    questSlotReserved: rules.roleRewards.firstSuccessfulQuestGuaranteed,
     questSuccesses: 0,
     lastQuestReward: null,
     bwDecidedAnnounced: false,
@@ -377,6 +386,7 @@ function applyQuestReward(s: GameState, ctx: Ctx, configured: QuestRewardDef | u
   const rr = s.rules.roleRewards;
   s.questSuccesses += 1;
   const first = s.questSuccesses === 1;
+  if (first) s.questSlotReserved = false; // Reservierung endet mit der Abwicklung (Rolle oder legitimer Fallback)
   let reward = configured;
   if (first && rr.firstSuccessfulQuestGuaranteed) reward = { kind: 'unlock_role', role: configured?.kind === 'unlock_role' ? configured.role : undefined };
   if (!reward) {

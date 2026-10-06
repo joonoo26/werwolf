@@ -76,6 +76,8 @@ export interface AbilityDef {
   kind: AbilityKind;
   /** null = unbegrenzt. */
   uses: number | null;
+  /** Abweichende Nutzungszahl je Startspielerzahl im automatischen Modus (z. B. Späher bei 4 Spielern). Host-Rollenmodi heben das auf. */
+  usesByPlayers?: Record<number, number | null>;
   /** inspect_group: Größe der gewählten Gruppe. */
   groupSize?: number;
   /** protect: dasselbe Ziel nicht in zwei aufeinanderfolgenden Nächten. */
@@ -403,6 +405,8 @@ export interface GameState {
   grantsByRole: Partial<Record<RoleId, number>>;
   /** Neue Sonderrollen je Spieltag (Tageslimit). */
   grantsByDay: Record<number, number>;
+  /** Reservierter Later-Special-Slot für die garantierte Rolle der ersten erfolgreichen Quest (bis zu deren Abwicklung). */
+  questSlotReserved: boolean;
   /** Erfolgreich beendete Quests dieser Partie. */
   questSuccesses: number;
   /** Art der Belohnung der letzten erfolgreichen Quest (für die Unterbrechung von Rollenbelohnungen). */

@@ -19,13 +19,11 @@ Umgesetzt laut GAME_DESIGN.md §24. **Noch zu entscheiden / im Playtest zu prüf
 10. Host-Rollenmodi (aus/möglich/garantiert): Engine + Spalte `rooms.role_modes` vorhanden, noch keine UI und kein Setter-RPC.
 11. Sonderaktionen laufen als einheitlicher Nacht-PIN-Bereich statt als eigene Phase innerhalb des Verdachtsmoments.
 
-## Reward Director (GAME_DESIGN §25) – offen
-- **4–5 Spieler:** Alle Rollen haben aktuell `minPlayers` ≥ 6. Die garantierte Quest-Rolle kann dort also nie vergeben werden (immer Fallbackbelohnung; `validateRoleConfig` warnt: `no_role_available_for_quest`). Erst eine Entscheidung zu Mindestspielerzahlen (z. B. Späher/Fährtenleser ab 4) löst das – bewusst nicht von mir gesetzt.
-- Phasengrenzen (früh bis Tag 2, mittel bis Tag 4) und Timing-Faktoren (bevorzugt = 2, sonst 1) sind Platzhalter.
-- Kleingruppen: Ich habe die Mindestzahl Lebender (4) auf **alle** späteren Vergaben in 4–6-Spieler-Partien erstreckt (nicht nur die erste Quest) – bitte bestätigen.
-- `maxLaterSpecials` (z. B. 1 bei 4–7 Spielern) gilt weiter auch für die garantierte erste Quest-Rolle; hat vorher ein Rollen-Moment die Obergrenze verbraucht, greift der Fallback.
-- `maxPerGame: 1` ersetzt die Wiedervergabe nach dem Tod des Trägers.
-- Konfigurierte Fixrolle der ersten Quest wird bevorzugt; ist sie nicht möglich, wird aus dem Pool gezogen.
+## Reward Director (GAME_DESIGN §25) – entschieden, als Playtest-Defaults
+Bestätigt und umgesetzt: Mindestspielerzahlen (Späher ab 4 mit 1 Nutzung, Alchemistin/Fährtenleser ab 5, Beobachter/Jäger ab 8), Host darf mit Warnung abweichen, Kleingruppen-Vergabe bei ≥4 Lebenden, reservierter Slot für die erste Quest-Rolle, Phasengrenzen (Tag 2/4) und Faktoren (2/1) – alles konfigurierbare **Playtest-/Tuningwerte**, keine endgültige Balance. Das Budget ist eine Obergrenze, kein Ziel.
+- Noch ohne Oberfläche: Anzeige der Host-Balance-Warnungen (Texte via `warningText`, Host-Setup-UI fehlt).
+- Folge der Reservierung: Gibt es in einer Partie nie eine erfolgreiche Quest, vergeben Rollen-Momente höchstens `maxLaterSpecials − 1` Rollen (bei 4–7 Spielern also keine).
+- Bei 4 Spielern sind bis zu 2 Sonderrollen möglich (zufällige Startrolle + Quest-Rolle); das ist Obergrenze, nicht Ziel.
 
 ## Entschieden (in GAME_DESIGN.md v0.6 festgeschrieben)
 - **Spielerzahl 4–14.** Rudel: 4→1, 5→1, 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4. **Kleingruppen 4–6**: Balance offen; Kill-Frequenz (`nightKillInterval`, Standard jede Nacht), Rollenpool und Informationsmechaniken je Spielerzahl konfigurierbar (eigenes Größenband `tiny`); keine neue Sonderregel. Bei 4–5 Spielern sind aktuell keine Sonderrollen erlaubt (Mindestspielerzahl der Rollen ≥ 6).

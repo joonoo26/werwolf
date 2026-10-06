@@ -358,7 +358,8 @@ describe('Host-Rollenkonfiguration (aus / möglich / garantiert) und Warnungen',
   });
   it('Warnungen: Mindestspielerzahl, nicht startbare Garantie, zu viele Garantien, Kombinationen – ohne Siegquoten', () => {
     const codes = (n: number, modes: Parameters<typeof validateRoleConfig>[1]) => validateRoleConfig(n, modes).map((w) => w.code);
-    expect(codes(6, { alchemist: 'possible' })).toContain('role_below_min_players');
+    expect(codes(4, { alchemist: 'possible' })).toContain('role_below_min_players');
+    expect(codes(5, { observer: 'possible' })).toContain('role_below_min_players');
     expect(codes(10, { alchemist: 'guaranteed', observer: 'guaranteed', scout: 'guaranteed' })).toContain('guaranteed_exceeds_start_range');
     expect(codes(10, { scout: 'guaranteed', tracker: 'guaranteed' })).toContain('guaranteed_combo_conflict');
     expect(codes(5, { scout: 'guaranteed' })).toContain('small_group_guaranteed');

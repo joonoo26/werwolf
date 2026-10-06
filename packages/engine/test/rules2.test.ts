@@ -153,13 +153,13 @@ describe('Abendmodus: Engine führt, bricht die Diskussion aber nie abrupt ab', 
 });
 
 describe('Kleingruppen 4–6 (Balance offen, konfigurierbar)', () => {
-  it('4 und 5 Spieler sind spielbar (1 Wolf) und haben standardmäßig keine Sonderrolle', () => {
+  it('4 und 5 Spieler sind spielbar (1 Wolf), konservativ: höchstens eine Startrolle (Budget ist keine Zielgröße)', () => {
     for (const n of [4, 5]) {
       for (let i = 0; i < 50; i++) {
         const s = newGame(n, `tiny${n}-${i}`);
         expect(Object.keys(s.players)).toHaveLength(n);
         expect(Object.values(s.players).filter((p) => p.faction === 'pack')).toHaveLength(1);
-        expect(Object.values(s.players).filter((p) => DEFAULT_RULES.roles[p.role].special)).toHaveLength(0);
+        expect(Object.values(s.players).filter((p) => DEFAULT_RULES.roles[p.role].special).length).toBeLessThanOrEqual(1);
       }
     }
   });

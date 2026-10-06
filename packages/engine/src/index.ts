@@ -14,5 +14,5 @@ export type { QuestDef, QuestCategory } from './content';
 export { pickLateAssignment, assignStartRoles, isRoleAllowed } from './director';
 export { describeBalance, describeAbility } from './tables';
 export type { BalanceRow } from './tables';
-export { validateRoleConfig } from './roleConfig';
+export { validateRoleConfig, warningText } from './roleConfig';
 export type { ConfigWarning, ConfigWarningCode } from './roleConfig';

@@ -91,7 +91,9 @@ export function pickLateAssignment(
   const { rules } = s;
   const playerCount = s.playerCount;
   const band = sizeBand(playerCount);
-  if (s.laterGrants >= rules.maxLaterSpecials[band]) return null;
+  // Der für die erste erfolgreiche Quest reservierte Slot steht Rollen-Momenten nicht zur Verfügung.
+  const reserved = s.questSlotReserved && trigger !== 'quest_reward' ? 1 : 0;
+  if (s.laterGrants >= rules.maxLaterSpecials[band] - reserved) return null;
   // Tageslimit: höchstens maxNewRolesPerDay neue Sonderrollen pro Spieltag.
   if ((s.grantsByDay[s.day] ?? 0) >= rules.roleRewards.maxNewRolesPerDay) return null;
 

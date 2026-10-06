@@ -55,3 +55,20 @@ export function validateRoleConfig(
   if (playerCount <= 6 && guaranteed.length > 0) out.push({ code: 'small_group_guaranteed', roles: guaranteed });
   return out;
 }
+
+/** Verständliche Balance-Hinweise für das Host-Setup (Warnung statt hartem Blockieren). */
+export function warningText(w: ConfigWarning): string {
+  const r = w.roles.join(', ');
+  switch (w.code) {
+    case 'role_below_min_players': return `${r}: Für diese Gruppengröße nicht empfohlen (zu wenige Spieler). Du kannst sie trotzdem aktivieren – die Balance ist ungetestet.`;
+    case 'role_above_max_players': return `${r}: Für diese Gruppengröße nicht empfohlen (zu viele Spieler).`;
+    case 'role_unreachable': return `${r}: Diese Rolle kann in dieser Konfiguration nie vergeben werden.`;
+    case 'guaranteed_not_startable': return `${r}: Kann nicht zum Spielstart garantiert werden.`;
+    case 'guaranteed_exceeds_start_range': return 'Mehr garantierte Startrollen, als für diese Gruppengröße vorgesehen sind.';
+    case 'guaranteed_combo_conflict': return `${r}: Diese Kombination ist für diese Gruppengröße nicht vorgesehen.`;
+    case 'too_many_pack_roles': return 'Mehr garantierte Rudelrollen als Rudelplätze.';
+    case 'small_group_guaranteed': return 'In kleinen Gruppen können garantierte Rollen das Spiel stark verschieben.';
+    case 'guaranteed_exceeds_budget': return 'Mehr garantierte Rollen als das Rollenbudget (Hälfte der Spieler) vorsieht.';
+    case 'no_role_available_for_quest': return 'Für die erste Quest ist keine Rolle verfügbar – es gibt stattdessen die Fallback-Belohnung.';
+  }
+}
