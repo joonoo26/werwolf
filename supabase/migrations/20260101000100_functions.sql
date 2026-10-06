@@ -653,5 +653,6 @@ grant execute on function
   public.server_purge_candidates(interval, interval)
 to service_role;
 
--- Datenbank-Hygiene (in Supabase per pg_cron einrichten, siehe docs/BACKEND.md):
---   select cron.schedule('dorf-cleanup', '17 4 * * *', $$select public.server_cleanup()$$);
+-- Datenbank-Hygiene: NICHT `server_cleanup()` direkt per pg_cron aufrufen – das würde Räume löschen, aber Profilfotos im
+-- Storage verwaisen lassen. Stattdessen täglich die Edge-Aktion `{"action":"cleanup"}` (Header `x-sweep-secret`) aufrufen:
+-- sie entfernt zuerst die Fotos über die Storage-API und ruft danach `server_cleanup()` auf (siehe docs/ARCHITECTURE.md).
