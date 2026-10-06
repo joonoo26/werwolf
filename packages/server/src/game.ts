@@ -53,7 +53,8 @@ export async function startGame(
   let state: GameState;
   try {
     state = createGame({
-      roster: loaded.players.map((p) => ({ id: p.id, name: p.name })),
+      roster: loaded.players.map((p) => ({ id: p.id, name: p.name, profile: { age: p.age, gender: p.gender, hair: p.hair, eyes: p.eyes } })),
+      roleModes: loaded.room.role_modes,
       hostId: host.id,
       mode: loaded.room.mode,
       targetMinutes: loaded.room.target_minutes ?? undefined,
@@ -146,8 +147,12 @@ export async function sweep(store: Store, now: number): Promise<{ processed: num
  * (CLAUDE.md: keine Rolle darf durch Push-Text verraten werden).
  */
 export function neutralPush(prev: PublicView | null, next: PublicView): { title: string; body: string } | null {
-  if (prev && prev.phase === next.phase && prev.council?.step === next.council?.step) return null;
   const title = 'Das Dorf';
+  // Geheime Momente: ein einziger Push, für ALLE identisch und ohne jeden Rollen-/Betroffenen-Bezug.
+  if (next.moment && next.moment.secret && next.moment.id !== prev?.moment?.id) {
+    return { title, body: 'Im Dorf hat sich etwas verändert.' };
+  }
+  if (prev && prev.phase === next.phase && prev.council?.step === next.council?.step) return null;
   switch (next.phase) {
     case 'night':
       return { title, body: 'Die Nacht beginnt.' };

@@ -22,7 +22,9 @@ begin
 end;
 $$;
 
-create function private.add_player(p_room uuid, p_user uuid, p_name text, p_pin text)
+create function private.add_player(
+  p_room uuid, p_user uuid, p_name text, p_pin text, p_age int, p_gender text, p_hair text, p_eyes text
+)
 returns uuid
 language plpgsql security definer set search_path = ''
 as $$
@@ -35,7 +37,14 @@ begin
   if btrim(p_name) = '' or char_length(btrim(p_name)) > 20 then
     raise exception 'invalid_name' using errcode = '22023';
   end if;
-  insert into public.players (room_id, user_id, name) values (p_room, p_user, btrim(p_name)) returning id into v_id;
+  if p_age is null or p_age < 5 or p_age > 120
+     or p_gender is null or p_gender not in ('female', 'male', 'diverse')
+     or p_hair is null or p_hair not in ('black', 'brown', 'blonde', 'red', 'gray')
+     or p_eyes is null or p_eyes not in ('brown', 'blue', 'green', 'gray') then
+    raise exception 'invalid_profile' using errcode = '22023';
+  end if;
+  insert into public.players (room_id, user_id, name, age, gender, hair, eyes)
+    values (p_room, p_user, btrim(p_name), p_age, p_gender, p_hair, p_eyes) returning id into v_id;
   insert into public.player_secrets (player_id, pin_hash) values (v_id, extensions.crypt(p_pin, extensions.gen_salt('bf', 8)));
   insert into public.player_status (player_id, room_id) values (v_id, p_room);
   return v_id;
@@ -44,7 +53,10 @@ exception when unique_violation then
 end;
 $$;
 
-create function public.create_room(p_name text, p_pin text, p_mode text default 'classic', p_target_minutes int default null)
+create function public.create_room(
+  p_name text, p_pin text, p_age int, p_gender text, p_hair text, p_eyes text,
+  p_mode text default 'classic', p_target_minutes int default null
+)
 returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
@@ -61,12 +73,14 @@ begin
   insert into public.rooms (code, host_user_id, mode, target_minutes)
   values (private.new_room_code(), v_user, p_mode, case when p_mode = 'evening' then p_target_minutes end)
   returning * into v_room;
-  v_player := private.add_player(v_room.id, v_user, p_name, p_pin);
+  v_player := private.add_player(v_room.id, v_user, p_name, p_pin, p_age, p_gender, p_hair, p_eyes);
   return jsonb_build_object('room_id', v_room.id, 'code', v_room.code, 'player_id', v_player);
 end;
 $$;
 
-create function public.join_room(p_code text, p_name text, p_pin text)
+create function public.join_room(
+  p_code text, p_name text, p_pin text, p_age int, p_gender text, p_hair text, p_eyes text
+)
 returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
@@ -87,7 +101,7 @@ begin
   if (select count(*) from public.players where room_id = v_room.id) >= 14 then
     raise exception 'room_full' using errcode = '53400';
   end if;
-  v_player := private.add_player(v_room.id, v_user, p_name, p_pin);
+  v_player := private.add_player(v_room.id, v_user, p_name, p_pin, p_age, p_gender, p_hair, p_eyes);
   return jsonb_build_object('room_id', v_room.id, 'code', v_room.code, 'player_id', v_player);
 end;
 $$;
@@ -369,12 +383,13 @@ begin
   return jsonb_build_object(
     'room', jsonb_build_object(
       'id', v_room.id, 'status', v_room.status, 'mode', v_room.mode,
-      'target_minutes', v_room.target_minutes, 'host_user_id', v_room.host_user_id
+      'target_minutes', v_room.target_minutes, 'host_user_id', v_room.host_user_id, 'role_modes', v_room.role_modes
     ),
     'version', coalesce(v_game.version, 0),
     'state', v_game.state,
     'players', coalesce((
-      select jsonb_agg(jsonb_build_object('id', p.id, 'user_id', p.user_id, 'name', p.name, 'ready', p.ready) order by p.joined_at)
+      select jsonb_agg(jsonb_build_object('id', p.id, 'user_id', p.user_id, 'name', p.name, 'ready', p.ready,
+        'age', p.age, 'gender', p.gender, 'hair', p.hair, 'eyes', p.eyes) order by p.joined_at)
       from public.players p where p.room_id = p_room
     ), '[]'::jsonb)
   );
@@ -442,7 +457,9 @@ begin
   v_new := v_current + 1;
   update public.game_secret set version = v_new, state = p_state where room_id = p_room;
   perform private.write_projections(p_room, v_new, p_public, p_private, p_pack_members, p_alive);
-  update public.rooms set status = p_status, next_deadline_at = p_next_deadline where id = p_room;
+  update public.rooms set status = p_status, next_deadline_at = p_next_deadline,
+    ended_at = case when p_status = 'ended' and ended_at is null then now() else ended_at end
+  where id = p_room;
   return v_new;
 end;
 $$;
@@ -491,15 +508,108 @@ as $$
   join public.players p on p.user_id = t.user_id where p.room_id = p_room;
 $$;
 
-create function public.server_cleanup(p_older_than interval default interval '2 days')
+-- Gastspieler-Daten (Profil, Foto-Pfad, Notizen, Verdacht, Rollenentscheidungen) leben nur im Raum und werden mit
+-- ihm gelöscht: beendete Partien nach `p_ended_after`, alle übrigen nach `p_older_than` (Ablauf der Partie).
+create function public.server_purge_candidates(
+  p_ended_after interval default interval '12 hours', p_older_than interval default interval '2 days'
+)
+returns table (room_id uuid, photo_path text)
+language sql stable security definer set search_path = ''
+as $$
+  select r.id, p.photo_path
+  from public.rooms r
+  left join public.players p on p.room_id = r.id and p.photo_path is not null
+  where r.created_at < now() - p_older_than
+     or (r.status = 'ended' and r.ended_at < now() - p_ended_after);
+$$;
+
+create function public.server_cleanup(
+  p_ended_after interval default interval '12 hours', p_older_than interval default interval '2 days'
+)
 returns int
 language plpgsql security definer set search_path = ''
 as $$
 declare n int;
 begin
-  delete from public.rooms where created_at < now() - p_older_than;
+  delete from public.rooms
+  where created_at < now() - p_older_than
+     or (status = 'ended' and ended_at < now() - p_ended_after);
   get diagnostics n = row_count;
   return n;
+end;
+$$;
+
+-- Foto: Pfad im privaten Bucket; nur der eigene Spieler darf seinen Pfad setzen.
+create function public.set_photo(p_room uuid, p_path text)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_player uuid;
+begin
+  select id into v_player from public.players where room_id = p_room and user_id = (select auth.uid());
+  if v_player is null then raise exception 'not_in_room' using errcode = '42501'; end if;
+  if p_path is not null and p_path <> p_room::text || '/' || v_player::text || '.jpg' then
+    raise exception 'invalid_path' using errcode = '22023';
+  end if;
+  update public.players set photo_path = p_path where id = v_player;
+end;
+$$;
+
+-- Private Notizen (nur Verfasser, nur PIN-entsperrt). Leerer Text löscht die Notiz.
+create function public.save_note(p_room uuid, p_about uuid, p_body text)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_me uuid;
+  v_body text := btrim(coalesce(p_body, ''));
+begin
+  select id into v_me from public.players where room_id = p_room and user_id = (select auth.uid());
+  if v_me is null or not private.can_use_notes(v_me) then raise exception 'not_allowed' using errcode = '42501'; end if;
+  if not exists (select 1 from public.players where id = p_about and room_id = p_room and id <> v_me) then
+    raise exception 'invalid_target' using errcode = '22023';
+  end if;
+  if v_body = '' then
+    delete from public.player_notes where owner_player_id = v_me and about_player_id = p_about;
+  else
+    if char_length(v_body) > 2000 then raise exception 'invalid_note' using errcode = '22023'; end if;
+    insert into public.player_notes (owner_player_id, about_player_id, body) values (v_me, p_about, v_body)
+      on conflict (owner_player_id, about_player_id) do update set body = excluded.body, updated_at = now();
+  end if;
+end;
+$$;
+
+-- Optionales dauerhaftes Profil – nur für registrierte (nicht anonyme) Konten mit verifizierter Anmeldung.
+create function private.is_registered()
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select (select auth.uid()) is not null and coalesce((select auth.jwt()) ->> 'is_anonymous', 'false') <> 'true';
+$$;
+
+create function public.save_profile(
+  p_name text, p_age int, p_gender text, p_hair text, p_eyes text, p_photo_path text default null
+)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not private.is_registered() then raise exception 'account_required' using errcode = '42501'; end if;
+  insert into public.user_profiles (user_id, name, age, gender, hair, eyes, photo_path)
+    values ((select auth.uid()), btrim(p_name), p_age, p_gender, p_hair, p_eyes, p_photo_path)
+    on conflict (user_id) do update set name = excluded.name, age = excluded.age, gender = excluded.gender,
+      hair = excluded.hair, eyes = excluded.eyes, photo_path = excluded.photo_path, updated_at = now();
+end;
+$$;
+
+create function public.delete_profile()
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not private.is_registered() then raise exception 'account_required' using errcode = '42501'; end if;
+  delete from public.user_profiles where user_id = (select auth.uid());
 end;
 $$;
 
@@ -508,12 +618,17 @@ $$;
 -- Postgres gewährt EXECUTE standardmäßig an PUBLIC. Erst alles entziehen, dann gezielt vergeben.
 revoke all on all functions in schema public from public, anon, authenticated;
 revoke all on all functions in schema private from public, anon, authenticated;
-grant execute on function private.is_member(uuid), private.can_see_private(uuid), private.can_read_channel(uuid, bigint)
+grant execute on function private.is_member(uuid), private.can_see_private(uuid), private.can_read_channel(uuid, bigint),
+  private.can_use_notes(uuid), private.is_registered()
   to authenticated, service_role;
 
 grant execute on function
-  public.create_room(text, text, text, int),
-  public.join_room(text, text, text),
+  public.create_room(text, text, int, text, text, text, text, int),
+  public.join_room(text, text, text, int, text, text, text),
+  public.set_photo(uuid, text),
+  public.save_note(uuid, uuid, text),
+  public.save_profile(text, int, text, text, text, text),
+  public.delete_profile(),
   public.set_ready(uuid, boolean),
   public.leave_room(uuid),
   public.remove_player(uuid, uuid),
@@ -534,7 +649,8 @@ grant execute on function
   public.server_start_game(uuid, uuid, jsonb, jsonb, jsonb, uuid[], uuid[], timestamptz),
   public.server_due_rooms(timestamptz),
   public.server_push_tokens(uuid),
-  public.server_cleanup(interval)
+  public.server_cleanup(interval, interval),
+  public.server_purge_candidates(interval, interval)
 to service_role;
 
 -- Datenbank-Hygiene (in Supabase per pg_cron einrichten, siehe docs/BACKEND.md):

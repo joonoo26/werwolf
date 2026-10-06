@@ -16,12 +16,15 @@ export async function freshDb() {
   const pool = new pg.Pool({ connectionString: u.toString(), max: 8 });
 
   type Row = Record<string, any>;
-  async function run(role: 'authenticated' | 'service_role' | 'anon' | 'postgres', uid: string | null, sql: string, params: unknown[] = []) {
+  async function run(role: 'authenticated' | 'service_role' | 'anon' | 'postgres', uid: string | null, sql: string, params: unknown[] = [], anonymous = true) {
     const c = await pool.connect();
     try {
       await c.query('begin');
       if (role !== 'postgres') await c.query(`set local role ${role}`);
-      if (uid) await c.query(`select set_config('request.jwt.claim.sub', $1, true)`, [uid]);
+      if (uid) {
+        await c.query(`select set_config('request.jwt.claim.sub', $1, true)`, [uid]);
+        await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: uid, is_anonymous: anonymous })]);
+      }
       const r = await c.query(sql, params as any[]);
       await c.query('commit');
       return r.rows as Row[];
@@ -33,11 +36,12 @@ export async function freshDb() {
     }
   }
 
-  const user = (uid: string) => ({
+  /** `anonymous: false` simuliert ein registriertes, verifiziertes Konto. */
+  const user = (uid: string, opts: { anonymous?: boolean } = {}) => ({
     uid,
-    q: (sql: string, params?: unknown[]) => run('authenticated', uid, sql, params),
+    q: (sql: string, params?: unknown[]) => run('authenticated', uid, sql, params, opts.anonymous ?? true),
     rpc: async (fn: string, ...args: unknown[]) => {
-      const rows = await run('authenticated', uid, `select public.${fn}(${args.map((_, i) => `$${i + 1}`).join(', ')}) as r`, args);
+      const rows = await run('authenticated', uid, `select public.${fn}(${args.map((_, i) => `$${i + 1}`).join(', ')}) as r`, args, opts.anonymous ?? true);
       return rows[0]?.r;
     },
   });
@@ -87,6 +91,9 @@ export async function freshDb() {
 
 export type Db = Awaited<ReturnType<typeof freshDb>>;
 
+/** Profil (Alter, Geschlecht, Haarfarbe, Augenfarbe) für Testspieler. */
+export const PROFILE = [30, 'female', 'brown', 'green'] as const;
+
 export interface World {
   db: Db;
   roomId: string;
@@ -100,10 +107,10 @@ export interface World {
 export async function lobby(db: Db, n: number, opts: { mode?: 'classic' | 'evening'; minutes?: number } = {}): Promise<World> {
   const users = Array.from({ length: n }, () => randomUUID());
   const host = db.user(users[0]!);
-  const created = await host.rpc('create_room', 'Spieler 1', '1234', opts.mode ?? 'classic', opts.minutes ?? null);
+  const created = await host.rpc('create_room', 'Spieler 1', '1234', ...PROFILE, opts.mode ?? 'classic', opts.minutes ?? null);
   const players = [created.player_id as string];
   for (let i = 1; i < n; i++) {
-    const r = await db.user(users[i]!).rpc('join_room', created.code, `Spieler ${i + 1}`, '1234');
+    const r = await db.user(users[i]!).rpc('join_room', created.code, `Spieler ${i + 1}`, '1234', ...PROFILE);
     players.push(r.player_id);
   }
   for (let i = 0; i < n; i++) await db.user(users[i]!).rpc('set_ready', created.room_id, true);

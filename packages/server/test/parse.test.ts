@@ -17,6 +17,15 @@ describe('parseCommand', () => {
       else expect(r).toBeNull();
     }
   });
+  it('akzeptiert die neuen Befehle (Verdacht, Beobachter, Ausschau halten, Heiltrank)', () => {
+    expect(parseCommand({ type: 'suspect', targets: ['a', 'b'] })).toEqual({ type: 'suspect', targets: ['a', 'b'] });
+    expect(parseCommand({ type: 'observe', action: 'ping' })).toEqual({ type: 'observe', action: 'ping' });
+    expect(parseCommand({ type: 'lookout' })).toEqual({ type: 'lookout' });
+    expect(parseCommand({ type: 'heal_decision', save: true })).toEqual({ type: 'heal_decision', save: true });
+    for (const bad of [{ type: 'observe', action: 'x' }, { type: 'heal_decision', save: 'yes' }, { type: 'suspect', targets: 'a' }, { type: 'suspect', targets: [1] }]) {
+      expect(parseCommand(bad)).toBeNull();
+    }
+  });
   it('lässt keine Extra-Felder durch', () => {
     expect(parseCommand({ type: 'vote', target: 'a', actor: 'boss' })).toEqual({ type: 'vote', target: 'a' });
   });

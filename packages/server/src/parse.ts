@@ -17,6 +17,14 @@ export function parseCommand(raw: unknown): Command | null {
       return { type: 'start_council' };
     case 'start_vote':
       return { type: 'start_vote' };
+    case 'lookout':
+      return { type: 'lookout' };
+    case 'observe':
+      return raw.action === 'start' || raw.action === 'ping' || raw.action === 'stop' ? { type: 'observe', action: raw.action } : null;
+    case 'heal_decision':
+      return typeof raw.save === 'boolean' ? { type: 'heal_decision', save: raw.save } : null;
+    case 'suspect':
+      return Array.isArray(raw.targets) && raw.targets.length <= 14 && raw.targets.every(isId) ? { type: 'suspect', targets: raw.targets as string[] } : null;
     case 'quest_done':
       return { type: 'quest_done' };
     case 'vote_speaker':

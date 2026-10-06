@@ -7,10 +7,21 @@ export interface LoadedGame {
     mode: 'classic' | 'evening';
     target_minutes: number | null;
     host_user_id: string;
+    /** Host-Konfiguration je Rolle (off | possible | guaranteed). */
+    role_modes?: Record<string, 'off' | 'possible' | 'guaranteed'>;
   };
   version: number;
   state: GameState | null;
-  players: { id: string; user_id: string; name: string; ready: boolean }[];
+  players: {
+    id: string;
+    user_id: string;
+    name: string;
+    ready: boolean;
+    age: number;
+    gender: 'female' | 'male' | 'diverse';
+    hair: 'black' | 'brown' | 'blonde' | 'red' | 'gray';
+    eyes: 'brown' | 'blue' | 'green' | 'gray';
+  }[];
 }
 
 export interface CommitPayload {

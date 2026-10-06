@@ -106,7 +106,9 @@ function role(def) {
     recipient: def.faction === "pack" ? "wolf" : "villager",
     startChoice: false,
     abilities: [],
-    maxAbilitiesPerNight: null,
+    maxLivingHolders: 1,
+    maxGrants: null,
+    announcedAtStart: false,
     ...def
   };
 }
@@ -132,7 +134,7 @@ var DEFAULT_RULES = {
       faction: "village",
       weight: 2,
       minPlayers: 6,
-      abilities: [ab({ id: "track", kind: "inspect_group", uses: 2, groupSize: 3 })]
+      abilities: [ab({ id: "track", kind: "inspect_group", uses: 1, groupSize: 3 })]
     }),
     guardian: role({
       id: "guardian",
@@ -146,11 +148,8 @@ var DEFAULT_RULES = {
       faction: "village",
       weight: 2,
       minPlayers: 8,
-      maxAbilitiesPerNight: 1,
-      abilities: [
-        ab({ id: "potion_protect", kind: "protect", uses: 1, allowSelf: true }),
-        ab({ id: "potion_strike", kind: "strike", uses: 1 })
-      ]
+      // Ausschließlich ein einmaliger Heiltrank (keine Tötungsfähigkeit).
+      abilities: [ab({ id: "potion_heal", kind: "heal", uses: 1 })]
     }),
     borderwalker: role({
       id: "borderwalker",
@@ -160,6 +159,7 @@ var DEFAULT_RULES = {
       enabled: false,
       // vollständig implementiert, standardmäßig deaktiviert (Wirkung wird separat getestet)
       startChoice: true,
+      announcedAtStart: true,
       unlock: { triggers: ["start"], earliestDay: 1, latestDay: 1 }
     }),
     hunter: role({
@@ -171,11 +171,21 @@ var DEFAULT_RULES = {
       // technisch vorhanden, standardmäßig deaktiviert
       abilities: [ab({ id: "last_shot", kind: "last_shot", uses: 1 })]
     }),
+    observer: role({
+      id: "observer",
+      faction: "village",
+      weight: 1,
+      minPlayers: 8,
+      // Mindestspielerzahl: Startwert, offen
+      abilities: [ab({ id: "observe", kind: "observe", uses: null, windowMs: 1e4 })]
+    }),
     shadowwolf: role({
       id: "shadowwolf",
       faction: "pack",
       weight: 1,
       minPlayers: 9,
+      enabled: false,
+      // vorerst nicht im Standardspiel
       abilities: [ab({ id: "veil", kind: "veil", uses: 1 })]
     })
   },
@@ -189,10 +199,10 @@ var DEFAULT_RULES = {
   comboLimits: [{ roles: ["scout", "tracker"], max: { tiny: 1, small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
   moments: {
-    quest_reward: { noRoleChance: 0.3 },
     after_first_council: { noRoleChance: 0.5 },
     day_start: { days: [3], noRoleChance: 0.5 }
   },
+  lookout: { enabled: true },
   durations: {
     speakerElectionMs: 6e4,
     discussionTargetMs: 8 * 6e4,
@@ -202,10 +212,12 @@ var DEFAULT_RULES = {
     tiebreakMs: 6e4,
     resultMs: 3e4,
     nightMs: 15e4,
+    healWindowMs: 4e4,
+    observerPingTtlMs: 2500,
     morningMs: 3e4,
     questMs: 5 * 6e4,
     confirmGraceMs: 6e4,
-    impulseMs: 8e3
+    momentMs: 2e4
   },
   evening: {
     minDayMs: 10 * 6e4,
@@ -238,20 +250,16 @@ function sizeBand(playerCount) {
 function wolfCount(playerCount, rules) {
   return rules.wolvesByPlayers[playerCount] ?? Math.max(2, Math.round(playerCount / 3.5));
 }
-var ROLE_IDS = ["villager", "wolf", "scout", "tracker", "alchemist", "guardian", "borderwalker", "hunter", "shadowwolf"];
+var ROLE_IDS = ["villager", "wolf", "scout", "tracker", "alchemist", "guardian", "borderwalker", "hunter", "shadowwolf", "observer"];
 var SPECIAL_ROLE_IDS = ROLE_IDS.filter((r) => DEFAULT_RULES.roles[r].special);
 
 // packages/engine/src/director.ts
 var living = (s) => Object.values(s.players).filter((p) => p.alive);
-function specialsGiven(s) {
-  return Object.values(s.players).filter((p) => s.rules.roles[p.role].special).length;
-}
-function roleTaken(s, role2) {
-  return Object.values(s.players).some((p) => p.role === role2);
-}
 function isRoleAllowed(def, ctx, rules) {
   if (!def.special || !def.enabled || def.weight <= 0) return false;
-  if (ctx.assigned.includes(def.id)) return false;
+  const holders = ctx.held.filter((r) => r === def.id).length;
+  if (def.maxLivingHolders !== null && holders >= def.maxLivingHolders) return false;
+  if (def.maxGrants !== null && (ctx.grants?.[def.id] ?? 0) >= def.maxGrants) return false;
   if (ctx.playerCount < def.minPlayers) return false;
   if (def.maxPlayers !== null && ctx.playerCount > def.maxPlayers) return false;
   if (!def.unlock.triggers.includes(ctx.trigger)) return false;
@@ -261,7 +269,7 @@ function isRoleAllowed(def, ctx, rules) {
   const band = sizeBand(ctx.playerCount);
   for (const combo of rules.comboLimits) {
     if (!combo.roles.includes(def.id)) continue;
-    const have = ctx.assigned.filter((r) => combo.roles.includes(r)).length;
+    const have = ctx.held.filter((r) => combo.roles.includes(r)).length;
     if (have + 1 > combo.max[band]) return false;
   }
   return true;
@@ -270,31 +278,35 @@ function recipients(s, def) {
   const want = def.recipient === "wolf" ? "wolf" : "villager";
   return living(s).filter((p) => p.role === want).map((p) => p.id);
 }
-function pickLateAssignment(s, trigger, rng) {
+function pickLateAssignment(s, trigger, rng, fixedRole) {
   const { rules } = s;
-  const playerCount = Object.keys(s.players).length;
+  const playerCount = s.playerCount;
   const band = sizeBand(playerCount);
-  if (specialsGiven(s) - s.startSpecialCount >= rules.maxLaterSpecials[band]) return null;
-  const assigned = Object.values(s.players).map((p) => p.role);
-  const ctx = { trigger, day: s.day, playerCount, assigned, aliveCount: living(s).length };
-  const defs = Object.values(rules.roles).filter(
-    (d) => isRoleAllowed(d, ctx, rules) && !roleTaken(s, d.id) && recipients(s, d).length > 0
+  if (s.laterGrants >= rules.maxLaterSpecials[band]) return null;
+  const held = living(s).map((p) => p.role);
+  const ctx = { trigger, day: s.day, playerCount, held, grants: s.grantsByRole, aliveCount: living(s).length };
+  const candidates = Object.values(rules.roles).filter(
+    (d) => (fixedRole ? d.id === fixedRole : true) && isRoleAllowed(d, ctx, rules) && recipients(s, d).length > 0
   );
-  const def = rng.weighted(defs, (d) => d.weight);
+  const def = fixedRole ? candidates[0] ?? null : rng.weighted(candidates, (d) => d.weight);
   if (!def) return null;
   return { playerId: rng.pick(recipients(s, def)), role: def.id };
 }
-function assignStartRoles(playerIds, rules, rng) {
+function assignStartRoles(playerIds, rules, rng, guaranteed = []) {
   const n = playerIds.length;
   const order = rng.shuffle(playerIds);
   let wolves = wolfCount(n, rules);
   const dist = rules.startSpecials[sizeBand(n)];
   const picked = rng.weighted(dist, (d) => d.weight);
+  const startCtx = (chosen2) => ({ trigger: "start", day: 1, playerCount: n, held: chosen2, aliveCount: n });
   const chosen = [];
-  for (let i = 0; i < (picked?.count ?? 0); i++) {
-    const options = Object.values(rules.roles).filter(
-      (d) => isRoleAllowed(d, { trigger: "start", day: 1, playerCount: n, assigned: chosen, aliveCount: n }, rules)
-    );
+  for (const r of guaranteed) {
+    const def = rules.roles[r];
+    if (def && isRoleAllowed(def, startCtx(chosen), rules)) chosen.push(r);
+  }
+  const target = Math.max(picked?.count ?? 0, chosen.length);
+  while (chosen.length < target) {
+    const options = Object.values(rules.roles).filter((d) => isRoleAllowed(d, startCtx(chosen), rules));
     const def = rng.weighted(options, (d) => d.weight);
     if (!def) break;
     chosen.push(def.id);
@@ -303,12 +315,8 @@ function assignStartRoles(playerIds, rules, rng) {
   const assignments = [];
   let cursor = 0;
   const packRoles = chosen.filter((r) => rules.roles[r].faction === "pack");
-  for (let i = 0; i < wolves; i++) {
-    assignments.push({ playerId: order[cursor++], role: packRoles[i] ?? "wolf" });
-  }
-  for (const r of chosen.filter((x) => rules.roles[x].faction !== "pack")) {
-    assignments.push({ playerId: order[cursor++], role: r });
-  }
+  for (let i = 0; i < wolves; i++) assignments.push({ playerId: order[cursor++], role: packRoles[i] ?? "wolf" });
+  for (const r of chosen.filter((x) => rules.roles[x].faction !== "pack")) assignments.push({ playerId: order[cursor++], role: r });
   while (cursor < order.length) assignments.push({ playerId: order[cursor++], role: "villager" });
   return { assignments, startSpecialCount: chosen.length };
 }
@@ -355,7 +363,7 @@ var QUESTS = [
     goal: "Findet ohne Absprache dieselbe Antwort.",
     task: "Alle denken sich gleichzeitig eine Farbe, eine Zahl von 1 bis 10 und ein Tier aus. Auf \u201EJetzt\u201C sagen alle laut ihre Antworten. Wie viele \xDCbereinstimmungen gibt es?",
     finish: "Fertig nach drei Runden. Ihr d\xFCrft nach jeder Runde nur schweigen und nicken.",
-    reward: { kind: "role" }
+    reward: { kind: "unlock_role", role: "scout" }
   },
   {
     id: "q-koordination-2",
@@ -448,6 +456,66 @@ var IMPULSES = {
 var NEUTRAL_CHANGE_IMPULSE = "impulse.change-village";
 var HINT_IMPULSE_KEYS = Object.keys(IMPULSES).filter((k) => k !== NEUTRAL_CHANGE_IMPULSE);
 
+// packages/engine/src/traits.ts
+var AGE_THRESHOLDS = [20, 30, 40, 50];
+var DARK_HAIR = ["black", "brown"];
+var LIGHT_HAIR = ["blonde", "gray"];
+var LIGHT_EYES = ["blue", "green", "gray"];
+function holds(st, p) {
+  switch (st.trait) {
+    case "gender":
+      return p.gender === st.value;
+    case "hair":
+      if (st.value === "dark") return DARK_HAIR.includes(p.hair);
+      if (st.value === "light") return LIGHT_HAIR.includes(p.hair);
+      return p.hair === st.value;
+    case "eyes":
+      if (st.value === "light") return LIGHT_EYES.includes(p.eyes);
+      return p.eyes === st.value;
+    case "age_over":
+      return p.age > st.value;
+    case "age_under":
+      return p.age < st.value;
+  }
+}
+function trueStatements(p) {
+  const out = [
+    { trait: "gender", value: p.gender },
+    { trait: "hair", value: p.hair },
+    { trait: "eyes", value: p.eyes }
+  ];
+  if (DARK_HAIR.includes(p.hair)) out.push({ trait: "hair", value: "dark" });
+  if (LIGHT_HAIR.includes(p.hair)) out.push({ trait: "hair", value: "light" });
+  if (LIGHT_EYES.includes(p.eyes)) out.push({ trait: "eyes", value: "light" });
+  for (const t of AGE_THRESHOLDS) {
+    if (p.age > t) out.push({ trait: "age_over", value: t });
+    if (p.age < t) out.push({ trait: "age_under", value: t });
+  }
+  return out;
+}
+function pickStatement(subject, group, rng) {
+  const all = trueStatements(subject).map((st) => ({ st, n: group.filter((g) => holds(st, g)).length }));
+  const ambiguous = all.filter((x) => x.n >= 2 && x.n < group.length);
+  if (ambiguous.length) return rng.pick(ambiguous).st;
+  const multi = all.filter((x) => x.n >= 2);
+  if (multi.length) return rng.pick(multi).st;
+  const best = Math.max(...all.map((x) => x.n));
+  return rng.pick(all.filter((x) => x.n === best)).st;
+}
+function defaultProfile(id) {
+  let h = 7;
+  for (const ch of id) h = h * 31 + ch.charCodeAt(0) >>> 0;
+  const genders = ["female", "male", "diverse"];
+  const hairs = ["black", "brown", "blonde", "red", "gray"];
+  const eyes = ["brown", "blue", "green", "gray"];
+  return {
+    age: 18 + h % 50,
+    gender: genders[h % 3],
+    hair: hairs[(h >> 3) % 5],
+    eyes: eyes[(h >> 6) % 4]
+  };
+}
+
 // packages/engine/src/schedule.ts
 function roundsLeft(nonPackAlive, packAlive) {
   return Math.max(1, Math.ceil((nonPackAlive - packAlive) / 2));
@@ -515,29 +583,37 @@ function setRole(s, id, role2, day) {
   p.lastTarget = {};
   p.sidePending = def.startChoice;
 }
-function setImpulse(s, ctx, kind) {
-  let textKey;
-  if (kind === "change") {
-    textKey = NEUTRAL_CHANGE_IMPULSE;
-  } else {
+function makeMoment(s, ctx, kind, opts) {
+  const id = (s.moment?.id ?? 0) + 1;
+  const m = { id, kind, at: ctx.now, showUntil: ctx.now + s.rules.durations.momentMs, secret: opts.secret };
+  if (opts.role) m.role = opts.role;
+  if (opts.announced?.length) m.announced = opts.announced;
+  if (opts.hint) {
     const unused = HINT_IMPULSE_KEYS.filter((k) => !s.usedImpulseKeys.includes(k));
     const pool = unused.length > 0 ? unused : HINT_IMPULSE_KEYS;
     if (unused.length === 0) s.usedImpulseKeys = [];
-    textKey = ctx.rng.pick(pool);
-    s.usedImpulseKeys.push(textKey);
+    m.textKey = ctx.rng.pick(pool);
+    s.usedImpulseKeys.push(m.textKey);
   }
-  s.impulse = { id: (s.impulse?.id ?? 0) + 1, kind, textKey, at: ctx.now, showUntil: ctx.now + s.rules.durations.impulseMs };
-  pushEvent(s, ctx, "impulse", void 0, { kind });
+  s.moment = m;
+  s.momentSecret = opts.secret ? { momentId: id, recipient: null, role: null, ...opts.secretInfo } : null;
+  pushEvent(s, ctx, "moment", void 0, { kind, role: opts.role });
+}
+function grantRole(s, playerId, role2) {
+  setRole(s, playerId, role2, s.day);
+  addNote(s, playerId, s.day, "role_gained", { role: role2 });
+  s.laterGrants += 1;
+  s.grantsByRole[role2] = (s.grantsByRole[role2] ?? 0) + 1;
 }
 function runMoment(s, ctx, trigger) {
   const m = s.rules.moments[trigger];
   if (m.days && !m.days.includes(s.day)) return;
-  setImpulse(s, ctx, "change");
+  makeMoment(s, ctx, "neutral", { secret: true });
   if (ctx.rng.chance(m.noRoleChance)) return;
   const a = pickLateAssignment(s, trigger, ctx.rng);
   if (!a) return;
-  setRole(s, a.playerId, a.role, s.day);
-  addNote(s, a.playerId, s.day, "role_gained", { role: a.role });
+  grantRole(s, a.playerId, a.role);
+  s.momentSecret = { momentId: s.moment.id, recipient: a.playerId, role: a.role };
 }
 function eliminate(s, ctx, id) {
   const p = s.players[id];
@@ -554,6 +630,15 @@ function eliminate(s, ctx, id) {
 }
 function createGame(input) {
   const rules = mergeRules(input.rules);
+  const guaranteed = [];
+  for (const [role2, mode] of Object.entries(input.roleModes ?? {})) {
+    if (!rules.roles[role2] || !rules.roles[role2].special) continue;
+    if (mode === "off") rules.roles[role2].enabled = false;
+    else {
+      rules.roles[role2].enabled = true;
+      if (mode === "guaranteed") guaranteed.push(role2);
+    }
+  }
   const n = input.roster.length;
   if (n < rules.minPlayers || n > rules.maxPlayers) {
     throw new Error(`Spielerzahl ${n} au\xDFerhalb von ${rules.minPlayers}\u2013${rules.maxPlayers}`);
@@ -562,7 +647,7 @@ function createGame(input) {
   if (!input.roster.some((r) => r.id === input.hostId)) throw new Error("Host ist kein Spieler");
   const rng = new Rng(seedToState(input.seed));
   const ids = input.roster.map((r) => r.id);
-  const { assignments, startSpecialCount } = assignStartRoles(ids, rules, rng);
+  const { assignments, startSpecialCount } = assignStartRoles(ids, rules, rng, guaranteed);
   const seats = rng.shuffle(ids);
   const s = {
     schema: 1,
@@ -586,8 +671,16 @@ function createGame(input) {
     usedQuestIds: [],
     usedImpulseKeys: [],
     startSpecialCount,
+    packSeats: wolfCount(n, rules),
+    playerCount: n,
+    laterGrants: 0,
+    grantsByRole: {},
+    bwDecidedAnnounced: false,
+    night: null,
+    suspicions: [],
     firstCouncilDone: false,
-    impulse: null,
+    moment: null,
+    momentSecret: null,
     events: [],
     nextEventId: 1,
     nextNoteId: 1,
@@ -601,6 +694,7 @@ function createGame(input) {
       alive: true,
       role: "villager",
       faction: "village",
+      profile: r.profile ?? defaultProfile(r.id),
       roleSince: 1,
       uses: initialUses("villager", rules),
       lastTarget: {},
@@ -613,7 +707,8 @@ function createGame(input) {
   for (const p of Object.values(s.players)) addNote(s, p.id, 1, "role", { role: p.role });
   const ctx = { now: input.now, rng };
   pushEvent(s, ctx, "game_started");
-  setImpulse(s, ctx, "change");
+  const announced = Object.values(s.players).map((p) => p.role).filter((r) => rules.roles[r].announcedAtStart);
+  makeMoment(s, ctx, "start", { secret: true, announced: [...new Set(announced)] });
   startDay(s, ctx);
   s.rng = rng.state();
   return s;
@@ -701,11 +796,15 @@ function startQuest(s, ctx) {
 function applyQuestReward(s, ctx, reward) {
   switch (reward.kind) {
     case "hint":
-      setImpulse(s, ctx, "hint");
+      makeMoment(s, ctx, "hint", { secret: false, hint: true });
       break;
-    case "role":
-      runMoment(s, ctx, "quest_reward");
+    case "unlock_role": {
+      const a = pickLateAssignment(s, "quest_reward", ctx.rng, reward.role);
+      if (!a) break;
+      grantRole(s, a.playerId, a.role);
+      makeMoment(s, ctx, "quest_unlock", { secret: true, role: a.role, secretInfo: { recipient: a.playerId, role: a.role } });
       break;
+    }
     case "event":
       pushEvent(s, ctx, "quest_event", void 0, { eventKey: reward.eventKey });
       break;
@@ -855,13 +954,23 @@ function proceed(s, ctx, which) {
     startDay(s, ctx);
   }
 }
+function finalizeBorderwalker(s, ctx, id, faction) {
+  const p = s.players[id];
+  p.sidePending = false;
+  p.faction = faction;
+  if (!s.bwDecidedAnnounced) {
+    s.bwDecidedAnnounced = true;
+    makeMoment(s, ctx, "borderwalker_decided", { secret: true, secretInfo: { recipient: id, role: p.role, faction } });
+  }
+}
 function startNight(s, ctx) {
-  for (const p of Object.values(s.players)) if (p.alive && p.sidePending) p.sidePending = false;
+  for (const p of Object.values(s.players)) if (p.alive && p.sidePending) finalizeBorderwalker(s, ctx, p.id, "village");
   s.readyAdvance = [];
   s.readyCouncil = [];
   s.majorityAt = null;
   s.nightActions = {};
-  s.phase = { kind: "night", startedAt: ctx.now, endsAt: ctx.now + s.rules.durations.nightMs };
+  s.night = { lockedTarget: null, healSave: null, lookoutUsed: false, observers: {} };
+  s.phase = { kind: "night", startedAt: ctx.now, endsAt: ctx.now + s.rules.durations.nightMs, stage: "act" };
   pushEvent(s, ctx, "night_began");
 }
 function resolvePackTarget(s, ctx) {
@@ -883,9 +992,22 @@ var hasUses = (p, a) => (p.uses[a.id] ?? 0) > 0;
 var consume = (p, a) => {
   if (a.uses !== null) p.uses[a.id] = (p.uses[a.id] ?? 0) - 1;
 };
+function lockPack(s, ctx) {
+  if (s.phase.kind !== "night" || !s.night) return;
+  const interval = Math.max(1, s.rules.nightKillInterval[s.playerCount] ?? 1);
+  const killNight = (s.day - 1) % interval === 0;
+  s.night.lockedTarget = killNight ? resolvePackTarget(s, ctx) : null;
+  for (const o of Object.values(s.night.observers)) o.open = false;
+  const alchemist = livingPlayers(s).find((p) => abilitiesOf(s, p).some((a) => a.kind === "heal" && hasUses(p, a)));
+  s.phase = { kind: "night", startedAt: s.phase.startedAt, endsAt: ctx.now + s.rules.durations.healWindowMs, stage: "heal" };
+  makeMoment(s, ctx, "pack_decided", {
+    secret: true,
+    secretInfo: { recipient: s.night.lockedTarget && alchemist ? alchemist.id : null, role: null, victim: s.night.lockedTarget ?? void 0 }
+  });
+}
 function resolveNight(s, ctx) {
   const day = s.day;
-  const target = resolvePackTarget(s, ctx);
+  const target = s.night?.lockedTarget ?? null;
   const actors = livingPlayers(s);
   const chosen = (p, a) => s.nightActions[p.id]?.[a.id];
   const each = (kind, fn) => {
@@ -923,18 +1045,21 @@ function resolveNight(s, ctx) {
   for (const p of actors) {
     for (const a of abilitiesOf(s, p)) if (a.kind === "protect" && !chosen(p, a)) p.lastTarget[a.id] = null;
   }
-  const strikeIds = [];
-  each("strike", (p, a, c) => {
-    consume(p, a);
-    if (c.target) strikeIds.push(c.target);
-  });
+  if (s.night?.healSave === true && target) {
+    for (const p of actors) {
+      for (const a of abilitiesOf(s, p)) {
+        if (a.kind === "heal" && hasUses(p, a)) {
+          consume(p, a);
+          protectedIds.add(target);
+        }
+      }
+    }
+  }
   const deaths = [];
-  const interval = Math.max(1, s.rules.nightKillInterval[Object.keys(s.players).length] ?? 1);
-  const killNight = (day - 1) % interval === 0;
-  if (killNight && target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
-  for (const t of strikeIds) if (isAlive(s, t) && !deaths.includes(t)) deaths.push(t);
+  if (target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
   s.nightActions = {};
   s.packVotes = {};
+  s.night = null;
   s.readyAdvance = [];
   s.majorityAt = null;
   for (const id of deaths) {
@@ -1016,6 +1141,10 @@ function step(s, ctx, force) {
     }
     case "night": {
       if (!(now >= phase.endsAt || force)) return false;
+      if (phase.stage === "act") {
+        lockPack(s, ctx);
+        return true;
+      }
       resolveNight(s, ctx);
       return true;
     }
@@ -1030,6 +1159,7 @@ function step(s, ctx, force) {
   }
 }
 function settle(s, ctx, force = false) {
+  expireObservers(s, ctx.now);
   let guard = 0;
   let first = true;
   while (guard++ < 24 && step(s, ctx, force && first)) first = false;
@@ -1051,14 +1181,13 @@ function requireLivingTarget(s, target, opts = {}) {
   return t;
 }
 function applyNightAction(s, actor, cmd) {
-  if (s.phase.kind !== "night") fail("wrong_phase", "Nachtaktionen gibt es nur nachts");
+  if (s.phase.kind !== "night" || s.phase.stage !== "act") fail("wrong_phase", "Nachtaktionen gibt es nur in der Handlungsphase der Nacht");
   const a = abilitiesOf(s, actor).find((x) => x.id === cmd.ability);
-  if (!a || a.kind === "last_shot") return fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
+  if (!a || a.kind === "last_shot" || a.kind === "heal" || a.kind === "observe") return fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
   if (!hasUses(actor, a)) fail("no_uses_left", "Keine Nutzungen \xFCbrig");
   let choice = {};
   switch (a.kind) {
-    case "inspect":
-    case "strike": {
+    case "inspect": {
       if (!cmd.target) return fail("invalid_target", "Ziel fehlt");
       requireLivingTarget(s, cmd.target, { not: actor.id });
       choice = { target: cmd.target };
@@ -1084,12 +1213,59 @@ function applyNightAction(s, actor, cmd) {
       break;
   }
   const chosen = s.nightActions[actor.id] ??= {};
-  const max = s.rules.roles[actor.role].maxAbilitiesPerNight;
-  if (max !== null && !(a.id in chosen)) {
-    const keep = Object.keys(chosen).slice(0, Math.max(0, max - 1));
-    for (const k of Object.keys(chosen)) if (!keep.includes(k)) delete chosen[k];
-  }
   chosen[a.id] = choice;
+}
+var observeAbility = (s, p) => abilitiesOf(s, p).find((a) => a.kind === "observe");
+function windowActive(s, o, ability, now) {
+  if (!o.open || o.windowStartedAt === null || o.lastPingAt === null) return false;
+  const max = ability?.windowMs ?? 1e4;
+  return now - o.lastPingAt <= s.rules.durations.observerPingTtlMs && now - o.windowStartedAt <= max;
+}
+function expireObservers(s, now) {
+  if (s.phase.kind !== "night" || !s.night) return;
+  for (const [id, o] of Object.entries(s.night.observers)) {
+    if (o.open && !windowActive(s, o, s.players[id] ? observeAbility(s, s.players[id]) : void 0, now)) o.open = false;
+  }
+}
+function observe(s, actor, action, ctx) {
+  const ability = observeAbility(s, actor);
+  if (!ability) return fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
+  if (s.phase.kind !== "night" || s.phase.stage !== "act" || !s.night) return fail("wrong_phase", "Nur in der Handlungsphase der Nacht");
+  let o = s.night.observers[actor.id];
+  if (action === "stop") {
+    if (o) o.open = false;
+    return;
+  }
+  if (action === "ping") {
+    if (o && windowActive(s, o, ability, ctx.now)) o.lastPingAt = ctx.now;
+    return;
+  }
+  if (o) return fail("already_decided", "Dein Blick in die Dunkelheit ist f\xFCr diese Nacht vorbei");
+  const pack = livingPlayers(s).filter((p) => p.faction === "pack");
+  if (pack.length === 0) return fail("invalid_target", "Nichts zu sehen");
+  const target = ctx.rng.pick(pack);
+  const group = livingPlayers(s).map((p) => p.profile);
+  o = { target: target.id, hint: pickStatement(target.profile, group, ctx.rng), windowStartedAt: ctx.now, lastPingAt: ctx.now, open: true };
+  s.night.observers[actor.id] = o;
+}
+function lookout(s, actor, ctx) {
+  if (!s.rules.lookout.enabled) return fail("not_allowed", "Ausschau halten ist nicht verf\xFCgbar");
+  if (actor.faction !== "pack") return fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
+  if (s.phase.kind !== "night" || s.phase.stage !== "act" || !s.night) return fail("wrong_phase", "Nur in der Handlungsphase der Nacht");
+  if (s.night.lookoutUsed) return fail("already_decided", "Das Rudel hat in dieser Nacht bereits Ausschau gehalten");
+  s.night.lookoutUsed = true;
+  const hit = Object.entries(s.night.observers).find(([id, o]) => {
+    const p = s.players[id];
+    return !!p?.alive && windowActive(s, o, observeAbility(s, p), ctx.now);
+  });
+  const pack = livingPlayers(s).filter((p) => p.faction === "pack");
+  if (!hit) {
+    for (const m of pack) addNote(s, m.id, s.day, "lookout_miss", { by: actor.id });
+    return;
+  }
+  const observer = s.players[hit[0]];
+  const statement = pickStatement(observer.profile, livingPlayers(s).map((p) => p.profile), ctx.rng);
+  for (const m of pack) addNote(s, m.id, s.day, "lookout_result", { by: actor.id, statement });
 }
 function execute(s, actorId, cmd, ctx) {
   if (cmd.type === "tick") {
@@ -1182,7 +1358,7 @@ function execute(s, actorId, cmd, ctx) {
     }
     case "pack_target": {
       if (actor.faction !== "pack") fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
-      if (s.phase.kind !== "day" && s.phase.kind !== "dusk" && s.phase.kind !== "night") {
+      if (s.phase.kind !== "day" && s.phase.kind !== "dusk" && !(s.phase.kind === "night" && s.phase.stage === "act")) {
         fail("wrong_phase", "Jetzt kann kein Ziel gew\xE4hlt werden");
       }
       const t = requireLivingTarget(s, cmd.target);
@@ -1194,11 +1370,45 @@ function execute(s, actorId, cmd, ctx) {
       applyNightAction(s, actor, cmd);
       return;
     }
+    case "suspect": {
+      const np = s.phase;
+      if (np.kind !== "night" || np.stage !== "act") return fail("wrong_phase", "Verdacht gibt es nur zu Beginn der Nacht");
+      const others = livingIds(s).filter((id) => id !== actor.id);
+      const need = Math.min(s.packSeats, others.length);
+      const targets = cmd.targets;
+      if (!Array.isArray(targets) || new Set(targets).size !== targets.length || targets.length !== need) {
+        return fail("invalid_target", `W\xE4hle genau ${need} verschiedene Personen`);
+      }
+      for (const t of targets) if (!others.includes(t)) return fail("invalid_target", "Nur lebende andere Spieler sind w\xE4hlbar");
+      const existing = s.suspicions.findIndex((e) => e.day === s.day && e.by === actor.id);
+      const entry = { day: s.day, by: actor.id, targets: [...targets] };
+      if (existing >= 0) s.suspicions[existing] = entry;
+      else s.suspicions.push(entry);
+      return;
+    }
+    case "observe": {
+      observe(s, actor, cmd.action, ctx);
+      return;
+    }
+    case "lookout": {
+      lookout(s, actor, ctx);
+      return;
+    }
+    case "heal_decision": {
+      const hp = s.phase;
+      if (hp.kind !== "night" || hp.stage !== "heal" || !s.night) return fail("wrong_phase", "Jetzt gibt es nichts zu entscheiden");
+      const ability = abilitiesOf(s, actor).find((a) => a.kind === "heal");
+      if (!ability) return fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
+      if (!hasUses(actor, ability)) return fail("no_uses_left", "Dein Trank ist verbraucht");
+      if (!s.night.lockedTarget) return fail("wrong_phase", "Es gibt kein Opfer");
+      if (s.night.healSave !== null) return fail("already_decided", "Du hast dich bereits entschieden");
+      s.night.healSave = cmd.save === true;
+      return;
+    }
     case "choose_side": {
       if (!actor.sidePending) fail("not_allowed", "Keine Wahl offen");
       if (s.phase.kind === "night" || s.phase.kind === "ended") fail("wrong_phase", "Zu sp\xE4t f\xFCr diese Wahl");
-      actor.sidePending = false;
-      actor.faction = cmd.side;
+      finalizeBorderwalker(s, ctx, actor.id, cmd.side);
       return;
     }
     default:
@@ -1229,8 +1439,18 @@ function nextDeadline(s) {
   const p = s.phase;
   switch (p.kind) {
     case "speaker_election":
-    case "night":
       return p.endsAt;
+    case "night": {
+      const t = [p.endsAt];
+      if (p.stage === "act" && s.night) {
+        for (const [id, o] of Object.entries(s.night.observers)) {
+          if (!o.open || o.lastPingAt === null || o.windowStartedAt === null) continue;
+          const max = s.players[id] ? observeAbility(s, s.players[id])?.windowMs ?? 1e4 : 1e4;
+          t.push(Math.min(o.lastPingAt + s.rules.durations.observerPingTtlMs + 1, o.windowStartedAt + max + 1));
+        }
+      }
+      return Math.min(...t);
+    }
     case "morning":
       return p.endsAt;
     case "council":
@@ -1244,6 +1464,33 @@ function nextDeadline(s) {
     case "ended":
       return null;
   }
+}
+
+// packages/engine/src/retrospective.ts
+function retrospective(s) {
+  const entries = s.suspicions;
+  const mentioned = /* @__PURE__ */ new Set();
+  const pairs = /* @__PURE__ */ new Map();
+  const byPlayer = /* @__PURE__ */ new Map();
+  const hitPack = /* @__PURE__ */ new Set();
+  for (const e of entries) {
+    byPlayer.set(e.by, (byPlayer.get(e.by) ?? 0) + 1);
+    for (const t of e.targets) {
+      mentioned.add(t);
+      const key = `${e.by}>${t}`;
+      const p = pairs.get(key) ?? { by: e.by, target: t, days: [] };
+      p.days.push(e.day);
+      pairs.set(key, p);
+      if (s.players[t]?.faction === "pack") hitPack.add(e.by);
+    }
+  }
+  const suspicionStreaks = [...pairs.values()].filter((p) => p.days.length >= 2).map((p) => ({ by: p.by, target: p.target, sinceDay: Math.min(...p.days), nights: p.days.length })).sort((a, b) => b.nights - a.nights || a.sinceDay - b.sinceDay).slice(0, 5);
+  const all = Object.keys(s.players);
+  return {
+    suspicionStreaks,
+    neverSuspected: entries.length ? all.filter((id) => !mentioned.has(id)) : [],
+    neverSuspectedPack: all.filter((id) => (byPlayer.get(id) ?? 0) > 0 && !hitPack.has(id))
+  };
 }
 
 // packages/engine/src/views.ts
@@ -1330,7 +1577,10 @@ function publicView(s) {
       name: pl.name,
       seat: pl.seat,
       alive: pl.alive,
-      isSpeaker: s.speakerId === pl.id
+      isSpeaker: s.speakerId === pl.id,
+      profile: pl.profile,
+      // Beim Ausscheiden für alle gleichzeitig aufgedeckt (Fraktion + Sonderrolle bzw. Grundrolle).
+      revealed: pl.alive ? null : { faction: pl.faction, role: pl.role }
     })),
     livingCount: living2.length,
     speakerId: s.speakerId,
@@ -1340,11 +1590,41 @@ function publicView(s) {
     electionProgress,
     morningDeaths,
     council,
-    impulse: s.impulse,
+    moment: s.moment,
+    packSeats: s.packSeats,
+    playerCount: s.playerCount,
+    nightStage: p.kind === "night" ? p.stage : null,
+    suspicionCount: Math.max(0, Math.min(s.packSeats, living2.length - 1)),
     events: s.events.slice(-60),
     winner: p.kind === "ended" ? s.winner : null,
-    reveal: p.kind === "ended" ? Object.values(s.players).map((pl) => ({ id: pl.id, role: pl.role, faction: pl.faction })) : null
+    reveal: p.kind === "ended" ? Object.values(s.players).map((pl) => ({ id: pl.id, role: pl.role, faction: pl.faction })) : null,
+    retrospective: p.kind === "ended" ? retrospective(s) : null
   };
+}
+var NEUTRAL_VARIANTS = 4;
+function variantFor(id, momentId) {
+  let h = momentId * 2654435761;
+  for (const ch of id) h = h * 31 + ch.charCodeAt(0) >>> 0;
+  return h % NEUTRAL_VARIANTS;
+}
+function panelFor(s, id) {
+  const m = s.moment;
+  if (!m || !m.secret) return null;
+  const sec = s.momentSecret && s.momentSecret.momentId === m.id ? s.momentSecret : null;
+  const neutral = { momentId: m.id, kind: "neutral", variant: variantFor(id, m.id) };
+  switch (m.kind) {
+    case "start":
+      return { momentId: m.id, kind: "role_info" };
+    case "quest_unlock":
+    case "neutral":
+      return sec?.recipient === id && sec.role ? { momentId: m.id, kind: "you_are", role: sec.role } : neutral;
+    case "borderwalker_decided":
+      return sec?.recipient === id && sec.faction ? { momentId: m.id, kind: "chose", faction: sec.faction } : neutral;
+    case "pack_decided":
+      return sec?.recipient === id && sec.victim ? { momentId: m.id, kind: "heal_prompt", victim: sec.victim, decided: s.night?.healSave ?? null } : neutral;
+    default:
+      return null;
+  }
 }
 function privateView(s, id) {
   const me = s.players[id];
@@ -1352,10 +1632,12 @@ function privateView(s, id) {
   const alive = livingPlayers(s);
   const others = alive.filter((p) => p.id !== id).map((p) => p.id);
   const isPack = me.alive && me.faction === "pack";
+  const phase = s.phase;
+  const actStage = phase.kind === "night" && phase.stage === "act";
   const abilities = [];
-  if (s.phase.kind === "night" && me.alive) {
+  if (actStage && me.alive) {
     for (const a of s.rules.roles[me.role].abilities) {
-      if (a.kind === "last_shot" || (me.uses[a.id] ?? 0) <= 0) continue;
+      if (a.kind === "last_shot" || a.kind === "heal" || a.kind === "observe" || (me.uses[a.id] ?? 0) <= 0) continue;
       abilities.push({
         id: a.id,
         kind: a.kind,
@@ -1379,10 +1661,10 @@ function privateView(s, id) {
     packTarget = {
       mine: s.packVotes[id] && s.players[s.packVotes[id]]?.alive ? s.packVotes[id] : null,
       candidates: alive.filter((p) => p.faction !== "pack").map((p) => p.id),
-      leading: top > 0 ? Object.keys(counts).filter((k) => counts[k] === top) : []
+      leading: top > 0 ? Object.keys(counts).filter((k) => counts[k] === top) : [],
+      locked: phase.kind === "night" && phase.stage === "heal"
     };
   }
-  const phase = s.phase;
   let lastShot = null;
   if (!me.alive && id in s.hunterShots) {
     const open = phase.kind === "council" && phase.council.step === "result" || phase.kind === "morning";
@@ -1390,8 +1672,24 @@ function privateView(s, id) {
   }
   let myBallot = null;
   if (phase.kind === "speaker_election") myBallot = phase.votes[id] ?? null;
-  if (phase.kind === "council") {
-    myBallot = phase.council.votes[id] ?? null;
+  if (phase.kind === "council") myBallot = phase.council.votes[id] ?? null;
+  let observation = null;
+  const obsAbility = me.alive ? s.rules.roles[me.role].abilities.find((a) => a.kind === "observe") : void 0;
+  if (obsAbility) {
+    const o = s.night?.observers[id];
+    observation = {
+      available: actStage && !o,
+      open: !!o?.open,
+      hint: o?.open ? o.hint : null,
+      startedAt: o?.open ? o.windowStartedAt : null,
+      windowMs: obsAbility.windowMs ?? 1e4
+    };
+  }
+  const lookout2 = isPack && s.rules.lookout.enabled ? { available: actStage && !s.night?.lookoutUsed } : null;
+  let heal = null;
+  if (me.alive && phase.kind === "night" && phase.stage === "heal" && s.night?.lockedTarget) {
+    const ab2 = s.rules.roles[me.role].abilities.find((a) => a.kind === "heal");
+    if (ab2 && (me.uses[ab2.id] ?? 0) > 0) heal = { victim: s.night.lockedTarget, decided: s.night.healSave };
   }
   return {
     schema: 1,
@@ -1408,7 +1706,11 @@ function privateView(s, id) {
     lastShot,
     readyCouncil: s.readyCouncil.includes(id),
     readyAdvance: s.readyAdvance.includes(id),
-    myBallot
+    myBallot,
+    panel: panelFor(s, id),
+    observation,
+    lookout: lookout2,
+    heal
   };
 }
 function packChannelMembers(s) {
@@ -1445,7 +1747,8 @@ async function startGame(store, input) {
   let state;
   try {
     state = createGame({
-      roster: loaded.players.map((p) => ({ id: p.id, name: p.name })),
+      roster: loaded.players.map((p) => ({ id: p.id, name: p.name, profile: { age: p.age, gender: p.gender, hair: p.hair, eyes: p.eyes } })),
+      roleModes: loaded.room.role_modes,
       hostId: host.id,
       mode: loaded.room.mode,
       targetMinutes: loaded.room.target_minutes ?? void 0,
@@ -1516,8 +1819,11 @@ async function sweep(store, now) {
   return { processed };
 }
 function neutralPush(prev, next) {
-  if (prev && prev.phase === next.phase && prev.council?.step === next.council?.step) return null;
   const title = "Das Dorf";
+  if (next.moment && next.moment.secret && next.moment.id !== prev?.moment?.id) {
+    return { title, body: "Im Dorf hat sich etwas ver\xE4ndert." };
+  }
+  if (prev && prev.phase === next.phase && prev.council?.step === next.council?.step) return null;
   switch (next.phase) {
     case "night":
       return { title, body: "Die Nacht beginnt." };
@@ -1547,6 +1853,14 @@ function parseCommand(raw) {
       return { type: "start_council" };
     case "start_vote":
       return { type: "start_vote" };
+    case "lookout":
+      return { type: "lookout" };
+    case "observe":
+      return raw.action === "start" || raw.action === "ping" || raw.action === "stop" ? { type: "observe", action: raw.action } : null;
+    case "heal_decision":
+      return typeof raw.save === "boolean" ? { type: "heal_decision", save: raw.save } : null;
+    case "suspect":
+      return Array.isArray(raw.targets) && raw.targets.length <= 14 && raw.targets.every(isId) ? { type: "suspect", targets: raw.targets } : null;
     case "quest_done":
       return { type: "quest_done" };
     case "vote_speaker":

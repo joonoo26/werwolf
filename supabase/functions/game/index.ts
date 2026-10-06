@@ -85,6 +85,16 @@ Deno.serve(async (req) => {
       return json(await sweep(store, now));
     }
 
+    if (body.action === 'cleanup') {
+      // Löscht abgelaufene Räume samt Gastspieler-Daten; Profilfotos zuerst über die Storage-API (nicht per SQL).
+      if (!sweepSecret || req.headers.get('x-sweep-secret') !== sweepSecret) return json({ error: 'forbidden' }, 403);
+      const { data: rows } = await admin.rpc('server_purge_candidates');
+      const paths = (rows ?? []).map((r: any) => r.photo_path).filter(Boolean);
+      for (let i = 0; i < paths.length; i += 100) await admin.storage.from('profile-photos').remove(paths.slice(i, i + 100));
+      const { data: purged } = await admin.rpc('server_cleanup');
+      return json({ purged, photos: paths.length });
+    }
+
     const user = await authenticate(req);
     if (!user) return json({ error: 'unauthorized' }, 401);
     const roomId = typeof body.roomId === 'string' ? body.roomId : '';

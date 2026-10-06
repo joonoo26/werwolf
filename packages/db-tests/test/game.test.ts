@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { handleCommand, handleTick, startGame, sweep } from '@dorf/server';
 import type { GameState } from '@dorf/engine';
-import { freshDb, lobby, type Db, type World } from './db';
+import { freshDb, lobby, PROFILE, type Db, type World } from './db';
 
 let db: Db;
 beforeAll(async () => (db = await freshDb()));
@@ -31,7 +31,7 @@ describe('Spielstart', () => {
     await db.user(w.users[3]!).rpc('set_ready', w.roomId, true);
     expect((await startGame(db.store, { roomId: w.roomId, userId: w.users[0]!, now: NOW, seed: seed() })).ok).toBe(true);
     expect(await startGame(db.store, { roomId: w.roomId, userId: w.users[0]!, now: NOW, seed: seed() })).toMatchObject({ ok: false, code: 'game_already_started' });
-    await expect(db.user(randomUUID()).rpc('join_room', w.code, 'Spät', '1234')).rejects.toThrow(/game_already_started/);
+    await expect(db.user(randomUUID()).rpc('join_room', w.code, 'Spät', '1234', ...PROFILE)).rejects.toThrow(/game_already_started/);
   });
 
   it('lehnt zu kleine Gruppen ab', async () => {

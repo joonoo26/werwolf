@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { freshDb, lobby, type Db } from './db';
+import { freshDb, lobby, PROFILE, type Db } from './db';
 
 let db: Db;
 beforeAll(async () => (db = await freshDb()));
@@ -11,23 +11,23 @@ describe('Lobby', () => {
     const w = await lobby(db, 14);
     expect(w.code).toMatch(/^[A-Z2-9]{6}$/);
     const extra = db.user(randomUUID());
-    await expect(extra.rpc('join_room', w.code, 'Zu viel', '1234')).rejects.toThrow(/room_full/);
+    await expect(extra.rpc('join_room', w.code, 'Zu viel', '1234', ...PROFILE)).rejects.toThrow(/room_full/);
   });
 
   it('Name muss im Raum eindeutig sein; PIN-Format wird geprüft', async () => {
     const host = db.user(randomUUID());
-    const r = await host.rpc('create_room', 'Mara', '4321');
+    const r = await host.rpc('create_room', 'Mara', '4321', ...PROFILE);
     const other = db.user(randomUUID());
-    await expect(other.rpc('join_room', r.code, ' mara ', '1234')).rejects.toThrow(/name_taken/);
-    await expect(other.rpc('join_room', r.code, 'Tom', 'abcd')).rejects.toThrow(/invalid_pin/);
-    await expect(other.rpc('join_room', r.code, 'Tom', '123')).rejects.toThrow(/invalid_pin/);
-    await expect(other.rpc('join_room', 'ZZZZZZ', 'Tom', '1234')).rejects.toThrow(/room_not_found/);
+    await expect(other.rpc('join_room', r.code, ' mara ', '1234', ...PROFILE)).rejects.toThrow(/name_taken/);
+    await expect(other.rpc('join_room', r.code, 'Tom', 'abcd', ...PROFILE)).rejects.toThrow(/invalid_pin/);
+    await expect(other.rpc('join_room', r.code, 'Tom', '123', ...PROFILE)).rejects.toThrow(/invalid_pin/);
+    await expect(other.rpc('join_room', 'ZZZZZZ', 'Tom', '1234', ...PROFILE)).rejects.toThrow(/room_not_found/);
   });
 
   it('Beitritt ist idempotent (Reconnect mit derselben Sitzung)', async () => {
     const host = db.user(randomUUID());
-    const r = await host.rpc('create_room', 'Mara', '4321');
-    const again = await host.rpc('join_room', r.code, 'Mara', '4321');
+    const r = await host.rpc('create_room', 'Mara', '4321', ...PROFILE);
+    const again = await host.rpc('join_room', r.code, 'Mara', '4321', ...PROFILE);
     expect(again.player_id).toBe(r.player_id);
   });
 
@@ -46,7 +46,7 @@ describe('Lobby', () => {
     const w = await lobby(db, 6);
     const member = db.user(w.users[1]!);
     const row = (await member.q('select * from public.players limit 1'))[0]!;
-    expect(Object.keys(row).sort()).toEqual(['alive', 'id', 'joined_at', 'name', 'ready', 'room_id', 'user_id']);
+    expect(Object.keys(row).sort()).toEqual(['age', 'alive', 'eyes', 'gender', 'hair', 'id', 'joined_at', 'name', 'photo_path', 'ready', 'room_id', 'user_id']);
     for (const t of ['player_secrets', 'game_secret', 'push_tokens']) {
       await expect(member.q(`select * from public.${t}`)).rejects.toThrow(/permission denied/);
     }
@@ -67,17 +67,17 @@ describe('Lobby', () => {
     const member = db.user(w.users[1]!);
     await expect(member.q(`select public.server_load_game($1)`, [w.roomId])).rejects.toThrow(/permission denied/);
     await expect(member.q(`select public.server_cleanup()`)).rejects.toThrow(/permission denied/);
-    await expect(member.q(`select private.add_player($1,$2,'x','1234')`, [w.roomId, randomUUID()])).rejects.toThrow(/permission denied/);
+    await expect(member.q(`select private.add_player($1,$2,'x','1234',30,'male','red','blue')`, [w.roomId, randomUUID()])).rejects.toThrow(/permission denied/);
     await expect(db.anon.q(`select public.server_now()`)).rejects.toThrow(/permission denied/);
   });
 
   it('Host kann Spieler entfernen; andere nicht; Host-Verlassen schließt den Raum', async () => {
     const host = db.user(randomUUID());
-    const r = await host.rpc('create_room', 'Host', '1234');
+    const r = await host.rpc('create_room', 'Host', '1234', ...PROFILE);
     const a = db.user(randomUUID());
-    const ja = await a.rpc('join_room', r.code, 'A', '1234');
+    const ja = await a.rpc('join_room', r.code, 'A', '1234', ...PROFILE);
     const b = db.user(randomUUID());
-    const jb = await b.rpc('join_room', r.code, 'B', '1234');
+    const jb = await b.rpc('join_room', r.code, 'B', '1234', ...PROFILE);
     await expect(a.rpc('remove_player', r.room_id, jb.player_id)).rejects.toThrow(/not_host/);
     await host.rpc('remove_player', r.room_id, ja.player_id);
     await b.rpc('leave_room', r.room_id);

@@ -25,7 +25,10 @@ create table public.rooms (
   target_minutes int check (target_minutes is null or target_minutes between 60 and 480),
   -- Werbefrei gilt für die ganze vom Käufer gehostete Partie (GAME_DESIGN §21).
   ad_free boolean not null default false,
+  -- Host-Konfiguration je Rolle (off | possible | guaranteed); leer = Standard. UI folgt später.
+  role_modes jsonb not null default '{}'::jsonb,
   next_deadline_at timestamptz,
+  ended_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -34,6 +37,13 @@ create table public.players (
   room_id uuid not null references public.rooms (id) on delete cascade,
   user_id uuid not null,
   name text not null check (char_length(btrim(name)) between 1 and 20),
+  -- Spielerprofil: für Mitspieler sichtbar. Gilt nur für diese Partie (Gastspieler) und wird mit dem Raum gelöscht.
+  age int not null check (age between 5 and 120),
+  gender text not null check (gender in ('female', 'male', 'diverse')),
+  hair text not null check (hair in ('black', 'brown', 'blonde', 'red', 'gray')),
+  eyes text not null check (eyes in ('brown', 'blue', 'green', 'gray')),
+  -- Pfad im privaten Storage-Bucket `profile-photos` (<room_id>/<player_id>.jpg); null = automatischer Avatar.
+  photo_path text,
   ready boolean not null default false,
   -- Öffentlich: ausgeschieden ja/nein wird vom Server aus dem Engine-Zustand gespiegelt.
   alive boolean not null default true,
@@ -110,6 +120,28 @@ create table public.player_status (
   unread int not null default 0
 );
 
+-- Private Notizen: ausschließlich für den Verfasser (nie Host, nie andere, nie von der Engine ausgewertet).
+create table public.player_notes (
+  owner_player_id uuid not null references public.players (id) on delete cascade,
+  about_player_id uuid not null references public.players (id) on delete cascade,
+  body text not null check (char_length(body) between 1 and 2000),
+  updated_at timestamptz not null default now(),
+  primary key (owner_player_id, about_player_id)
+);
+
+-- Optionales dauerhaftes Profil (nur für registrierte, verifizierte Konten; Gäste haben keines).
+-- Spielbezogene Daten (Notizen, Verdacht, Rollenentscheidungen) gehören NICHT dazu.
+create table public.user_profiles (
+  user_id uuid primary key,
+  name text not null check (char_length(btrim(name)) between 1 and 20),
+  age int not null check (age between 5 and 120),
+  gender text not null check (gender in ('female', 'male', 'diverse')),
+  hair text not null check (hair in ('black', 'brown', 'blonde', 'red', 'gray')),
+  eyes text not null check (eyes in ('brown', 'blue', 'green', 'gray')),
+  photo_path text,
+  updated_at timestamptz not null default now()
+);
+
 create table public.push_tokens (
   user_id uuid not null,
   token text not null,
@@ -139,6 +171,8 @@ alter table public.channel_members enable row level security;
 alter table public.messages enable row level security;
 alter table public.player_status enable row level security;
 alter table public.push_tokens enable row level security;
+alter table public.player_notes enable row level security;
+alter table public.user_profiles enable row level security;
 
 -- ───────────────────────── Hilfsfunktionen für Policies ─────────────────────────
 
@@ -191,6 +225,23 @@ as $$
   );
 $$;
 
+-- Notizen sind privat: nur der Verfasser, nur PIN-entsperrt (wie alle privaten Informationen).
+create function private.can_use_notes(p_owner uuid)
+returns boolean
+language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.players p
+    join public.player_secrets s on s.player_id = p.id
+    where p.id = p_owner
+      and p.user_id = (select auth.uid())
+      and s.unlocked_until is not null
+      and s.unlocked_until > now()
+  );
+$$;
+
+grant execute on function private.can_use_notes(uuid) to authenticated;
 grant execute on function private.is_member(uuid) to authenticated;
 grant execute on function private.can_see_private(uuid) to authenticated;
 grant execute on function private.can_read_channel(uuid, bigint) to authenticated;
@@ -200,6 +251,8 @@ grant execute on function private.can_read_channel(uuid, bigint) to authenticate
 grant select on public.rooms, public.players, public.public_state to authenticated;
 grant select on public.player_private, public.channels, public.channel_members, public.messages to authenticated;
 grant select on public.player_status to authenticated;
+grant select on public.player_notes to authenticated;
+grant select on public.user_profiles to authenticated;
 
 create policy rooms_member_read on public.rooms
   for select to authenticated using (private.is_member(id));
@@ -221,6 +274,12 @@ create policy channel_members_readable on public.channel_members
 
 create policy messages_readable on public.messages
   for select to authenticated using (private.can_read_channel(channel_id, id));
+
+create policy player_notes_owner on public.player_notes
+  for select to authenticated using (private.can_use_notes(owner_player_id));
+
+create policy user_profiles_owner on public.user_profiles
+  for select to authenticated using (user_id = (select auth.uid()));
 
 create policy player_status_owner on public.player_status
   for select to authenticated using (
