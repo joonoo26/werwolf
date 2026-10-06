@@ -1,5 +1,5 @@
 # DAS DORF – GAME DESIGN
-**Version 0.6 – kompakte Source of Truth** (v0.6: 4–14 Spieler, Kleingruppen 4–6 mit offener Balance, Grenzgänger standardmäßig deaktiviert, Kill-Frequenz konfigurierbar)
+**Version 0.7 – kompakte Source of Truth** (v0.7: synchrone geheime Momente (Variante A), eine Sonderrolle pro Person, Verdachtsabgabe vor der Nacht, Beobachter/Ausschau, Alchemistin nur Heilung, öffentliche Aufdeckung, Profile; Details §24. v0.6: 4–14 Spieler, Kleingruppen 4–6 mit offener Balance, Grenzgänger standardmäßig deaktiviert, Kill-Frequenz konfigurierbar)
 
 **Version 0.5** (Änderungen ggü. 0.3: Dorfrat ohne Nominierung/Verteidigung und ohne hartes Zeitlimit, Quest-Belohnungen, Grenzgänger inkl. Rudelstärke, konfigurierbare Sonderrollen, Rollen-Direktor ohne Ausgleichslogik, einfache Rollen-Momente, Nacht-Timing, Startwerte für Rudelgröße und Rollen)
 
@@ -107,6 +107,9 @@ In der Nacht handeln Rudel und aktuell aktive Sonderrollen.
 - ausgeschiedene Wölfe verlieren sofort alle Rudelrechte
 
 Wird das vorbereitete Ziel vorher verbannt, muss das Rudel neu wählen.
+
+### Verdacht vor der Nacht
+Jeder Lebende markiert vor der Nacht geheim genau so viele Personen, wie das Rudel Plätze hat (begrenzt durch die Zahl der übrigen Lebenden). Die Abgaben wirken nie auf das Spiel; sie dienen ausschließlich dem Rückblick am Ende (§24).
 
 ### Nacht-Timing (Timing-Schutz)
 Keine Rolle und keine Aktion darf durch unterschiedlich lange Wartezeiten, Push-Timing oder Haptik erkennbar werden: Die Nacht hat eine für alle gleiche, feste Länge (kein vorzeitiges Ende, wenn „alle Handelnden fertig" sind), Zeitfenster für letzte Aktionen sind für alle gleich lang, Push-Texte/-Zeitpunkte und Haptik sind für alle identisch.
@@ -301,10 +304,7 @@ Wenn eine Quest läuft und ein Dorfrat/Nacht ansteht:
 3. erst danach neue Aktion
 
 ## 20. Rollenoffenlegung
-Default für den MVP: Rolle eines ausgeschiedenen Spielers wird nicht sofort offengelegt.  
-Alle Rollen werden spätestens am Spielende aufgedeckt.
-
-Diese Regel muss im Playtest gezielt validiert werden, darf aber nicht stillschweigend geändert werden.
+**Ab v0.7:** Beim Ausscheiden (Verbannung, Nacht, letzter Schuss) werden für alle gleichzeitig Fraktion und Rolle (Sonderrolle bzw. Grundrolle) öffentlich aufgedeckt. Dies ersetzt den früheren MVP-Default „keine sofortige Offenlegung"; im Playtest zu validieren. Alle übrigen Rollen werden am Spielende aufgedeckt.
 
 ## 21. Werbung / Werbefrei
 Kostenlose App vollständig spielbar.
@@ -342,3 +342,33 @@ Nicht übernehmen:
 - 1:1-Rollenbeschreibungen
 
 Eigene Marke, eigene Texte, eigene Rollenbezeichnungen, eigene Quests und eigene Gestaltung.
+
+## 24. Entscheidungen v0.7 (Phase 6)
+
+### Synchroner geheimer Moment (Variante A)
+Bei jedem geheimen Moment (Spielstart, Quest-Freischaltung, neutrale Rollen-Momente, Grenzgänger-Entscheidung, „DAS RUDEL HAT ENTSCHIEDEN") passiert auf **allen** Geräten dasselbe: gleicher öffentlicher Text, gleiche Dauer, gleiche Haptik, gleicher Klang-Cue (nur Hook, keine Audiodateien), identischer Push-Text („Im Dorf hat sich etwas verändert.") und **frische PIN-Eingabe** im selben Overlay. Danach zeigt der private Bereich dem Betroffenen den echten Inhalt, allen anderen einen neutralen atmosphärischen Text. Texte sind zentral in `apps/mobile/src/ui/strings.ts`.
+
+### Rollen
+- Jede Person hat eine Fraktion (Dorf/Rudel) und höchstens **eine** Sonderrolle. Neue Rollen gehen nur an Personen mit reiner Grundrolle (Dorfbewohner/Wolf). Stirbt der Träger, darf die Rolle (konfigurierbar `maxLivingHolders`, `maxGrants`) erneut vergeben werden.
+- Neutrale Rollen-Momente bleiben (`after_first_council`, `day_start`, je `noRoleChance`). Eine **Quest-Freischaltung ist öffentlich benannt** („Einer von euch wird zum …"); gibt es keinen Empfänger, entfällt sie.
+- Host-Rollenmodi je Rolle: aus / möglich / garantiert (`rooms.role_modes`); `validateRoleConfig` liefert Warnungen (kein Siegquoten-Urteil).
+- **Späher**: 2 Nutzungen. **Fährtenleser**: genau 1 Nutzung. **Alchemistin**: nur ein Heiltrank (kein Angriff). **Wächter**: unbegrenzt, nie dieselbe Person zweimal in Folge, sich selbst erlaubt. **Jäger**: ab 8 Spielern verfügbar, standardmäßig deaktiviert. **Schattenwolf**: nicht im Standardpool (deaktiviert). **Grenzgänger**: nur Startrolle, öffentlich angekündigt („DER GRENZGÄNGER IST UNTER EUCH"), Entscheidung geheim, danach Moment „DIE ENTSCHEIDUNG IST GEFALLEN" (standardmäßig deaktiviert).
+- **Beobachter** (neu, Dorf): einmal pro Nacht ein 10-Sekunden-Fenster; solange die Taste gehalten wird (Lebenszeichen alle Sekunde, Hintergrund/Loslassen beendet es), erscheint ein wahrer Merkmals-Hinweis auf ein Rudelmitglied (ohne Namen). Nur ein Fenster pro Nacht.
+- **Rudel „Ausschau halten"**: ein gemeinsamer Versuch pro Nacht. Treffen die Beobachter-Fenster, erhält das gesamte lebende Rudel eine Notiz mit einer wahren Aussage; sonst „NUR SCHATTEN".
+
+### Alchemistin-Ablauf
+Nach der Rudelsperre folgt für **jede** Nacht ein Heil-Fenster fester Länge (auch ohne Alchemistin – Timing-Schutz). Moment „DAS RUDEL HAT ENTSCHIEDEN"; nur die Alchemistin sieht das Opfer und entscheidet (RETTEN / NICHT EINGREIFEN, einmalig, verpflichtend bestätigen). Ohne Entscheidung gilt „nicht eingreifen"; der Trank wird nur bei tatsächlichem Einsatz verbraucht.
+
+### Öffentliche Rudelplätze
+Die Zahl der Rudelplätze und der Spieler ist öffentlich und konstant (auch wenn ein Grenzgänger einen Wolf-Platz ersetzt). Das Dashboard zeigt atmosphärisch: Bewohner · bekannte Rudelplätze · leben · ausgeschieden.
+
+### Profil, Datenschutz, Notizen
+- Pflichtangaben für Mitspieler sichtbar: Alter (exakt), Geschlecht (Frau/Mann/Divers), Haarfarbe, Augenfarbe; optional Foto, sonst Auto-Avatar. Der Beobachter-Hinweis stützt sich auf diese Angaben (wahre Aussage, die mindestens zwei, aber nicht alle Lebenden trifft).
+- **Gäste** (anonym): Angaben und Foto gelten nur für die Partie und werden nach Ende gelöscht (`server_cleanup`). **Optionales dauerhaftes Profil** nur für registrierte Konten (Datenmodell/RPC vorbereitet; Konto-/E-Mail-UI offen).
+- Private Notizen je Mitspieler: nur für den Verfasser, nur nach PIN-Entsperrung, nie für Host oder Engine.
+
+### Rückblick am Ende
+Aus den geheimen Verdachtsabgaben: „A hatte B seit Tag X im Verdacht", „Niemand verdächtigte C", „D verdächtigte nie ein Rudelmitglied" – nur nach Spielende veröffentlicht.
+
+### Jenseits-Nachrichten
+Nur als Quest-/Ereignis-Belohnung vorgesehen, **nicht umgesetzt**; Moderationsmethode offen (siehe OPEN_DECISIONS).

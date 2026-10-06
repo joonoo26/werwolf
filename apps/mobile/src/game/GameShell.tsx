@@ -9,9 +9,9 @@ import { t } from '../ui/strings';
 import { colors, fonts, MIN_TOUCH, space } from '../ui/theme';
 import { Text as RNText } from 'react-native';
 import { Messages } from './Chat';
-import { ImpulseOverlay } from './ImpulseOverlay';
+import { MomentOverlay } from './MomentOverlay';
+import { PlayersTab } from './Players';
 import { PrivateArea } from './PrivateArea';
-import { PlayersGrid } from './parts';
 import { CouncilStage, DayStage, DuskStage, EndStage, MorningStage, NightStage, SpeakerStage } from './stages';
 import { useAct } from './useAct';
 import { RulesText } from '../ui/Rules';
@@ -53,10 +53,10 @@ export function GameShell({ onLeave }: { onLeave: () => void }) {
             </>
           )}
           {!privateOpen && tab === 'messages' && <Messages />}
-          {!privateOpen && tab === 'players' && <ScrollView contentContainerStyle={{ padding: space.xl, gap: space.lg }}><Text v="display" accessibilityRole="header">{t.players.title}</Text><PlayersGrid pub={pub} columns={4} /></ScrollView>}
+          {!privateOpen && tab === 'players' && <PlayersTab pub={pub} />}
           {!privateOpen && tab === 'more' && <More onLeave={onLeave} />}
           {!privateOpen && null}
-          <ImpulseOverlay impulse={pub.impulse} />
+          <MomentOverlay moment={pub.moment} />
         </View>
         <View accessibilityRole="tablist" style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.night900 }}>
           {tabs.map((x) => (

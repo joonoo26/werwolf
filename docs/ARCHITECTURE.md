@@ -18,6 +18,12 @@ apps/mobile          Expo (React Native, expo-router) – iPhone/iPad zuerst, An
 - Push: immer neutral und für alle identisch (`neutralPush`, `MESSAGE_PUSH`). Keine Rolle in Text, Ton, Haptik oder Navigation.
 - Timing: feste Nachtlänge, feste Fenster für letzte Schüsse, identische Haptik/Overlays.
 
+## Profile, Fotos, Löschung
+- Profilangaben (`players.age/gender/hair/eyes`) sind für Raummitglieder lesbar; Foto im privaten Bucket `profile-photos/<room>/<player>.jpg` (Policies: nur Raummitglieder lesen, nur Eigentümer schreiben), App lädt per signierter URL.
+- Private Notizen (`player_notes`): nur Verfasser und nur PIN-entsperrt (`private.can_use_notes`).
+- Gäste: Löschung per `server_cleanup(ended_after, older_than)` → kaskadierendes Löschen der Räume; Fotos entfernt zuvor die Edge-Aktion `cleanup` über die Storage-API. Optionales Konto-Profil: `user_profiles` (nur registrierte, nicht-anonyme Nutzer).
+- Geheime Momente: Public State enthält nur den Moment (ohne Empfänger); der Empfänger steht nur im Server-Zustand, der private Bereich liefert `panel`.
+
 ## Nebenläufigkeit & Ausfälle
 - Jeder Schritt = Laden → Engine → Commit mit Versionsprüfung (CAS) → Retry mit Jitter. Alle 14 Spieler können gleichzeitig stimmen.
 - Fristen: jedes Gerät sendet `tick` nach Ablauf (Server prüft, idempotent); zusätzlich Cron-`sweep` (`rooms.next_deadline_at`). Ein ausgefallenes Gerät blockiert nie.
@@ -27,7 +33,7 @@ apps/mobile          Expo (React Native, expo-router) – iPhone/iPad zuerst, An
 ## Einrichtung
 1. Supabase-Projekt anlegen; **Anonymous Sign-Ins** aktivieren.
 2. `supabase db push` (Migrationen), `supabase functions deploy game`, Secret `SWEEP_SECRET` setzen.
-3. pg_cron: minütlich `POST /functions/v1/game {"action":"sweep"}` mit Header `x-sweep-secret`; täglich `select public.server_cleanup()`.
+3. pg_cron: minütlich `POST /functions/v1/game {"action":"sweep"}` mit Header `x-sweep-secret`; täglich `POST /functions/v1/game {"action":"cleanup"}` (gleicher Header; entfernt zuerst Fotos, dann Daten beendeter Spiele).
 4. `apps/mobile/.env` aus `.env.example`; `eas build` (Development Build, da Kamera/Push nativ).
 5. Nach Änderungen an engine/server: `npm run build:functions` (CI prüft per `check:functions`).
 

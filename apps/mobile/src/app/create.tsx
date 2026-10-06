@@ -2,9 +2,11 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { createRoom, errorText } from '../lib/api';
+import { uploadPhoto } from '../lib/photos';
 import { saveSession } from '../lib/storage';
 import { ensureSession } from '../lib/supabase';
 import { isValidPin, normalizePin } from '../logic/lock';
+import { ProfileForm, emptyProfile, profileValid, type ProfileDraft } from '../ui/ProfileForm';
 import { Button, Field, Screen, Text } from '../ui/primitives';
 import { t } from '../ui/strings';
 import { colors, MIN_TOUCH, radius, space } from '../ui/theme';
@@ -15,14 +17,16 @@ export default function Create() {
   const [pin, setPin] = useState('');
   const [mode, setMode] = useState<'classic' | 'evening'>('classic');
   const [hours, setHours] = useState(3);
+  const [profile, setProfile] = useState<ProfileDraft>(emptyProfile);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const ok = name.trim().length > 0 && isValidPin(pin);
+  const ok = name.trim().length > 0 && isValidPin(pin) && profileValid(profile);
   const submit = async () => {
     setBusy(true); setErr(null);
     try {
       await ensureSession();
-      const r = await createRoom(name.trim(), pin, mode, hours * 60);
+      const r = await createRoom(name.trim(), pin, { age: Number(profile.age), gender: profile.gender!, hair: profile.hair!, eyes: profile.eyes! }, mode, hours * 60);
+      if (profile.photoB64) await uploadPhoto(r.room_id, r.player_id, profile.photoB64);
       await saveSession({ roomId: r.room_id, code: r.code });
       router.replace(`/room/${r.room_id}`);
     } catch (e) { setErr(errorText(e, t.errors, t.common.error)); } finally { setBusy(false); }
@@ -41,6 +45,7 @@ export default function Create() {
           <Text v="display" accessibilityRole="header">{t.create.title}</Text>
           <Field label={t.create.name} value={name} onChangeText={setName} maxLength={20} autoCapitalize="words" />
           <Field label={t.create.pin} value={pin} onChangeText={(v) => setPin(normalizePin(v))} secure keyboardType="number-pad" maxLength={6} hint={t.create.pinHint} />
+          <ProfileForm value={profile} onChange={setProfile} name={name} />
           <View style={{ gap: space.md }}>
             <Choice id="classic" label={t.create.classic} hint={t.create.classicHint} />
             <Choice id="evening" label={t.create.evening} hint={t.create.eveningHint} />

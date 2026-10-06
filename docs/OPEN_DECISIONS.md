@@ -5,6 +5,20 @@ aber einige **Lücken**, die für eine lauffähige Engine geschlossen werden mus
 `packages/engine/src/rules.ts` (Startwerte für Playtests); Interpretationen sind hier gesammelt und sollen im
 Playtest bestätigt oder geändert werden. Nichts davon wurde stillschweigend als „Regel" festgeschrieben.
 
+## Phase 6 (v0.7): Startwerte und echte offene Entscheidungen
+Umgesetzt laut GAME_DESIGN.md §24. **Noch zu entscheiden / im Playtest zu prüfen:**
+1. Beobachter: Mindestspielerzahl (Startwert 8), Gewicht (1), nur ein Fenster pro Nacht, Fensterlänge 10 s, Lebenszeichen-Toleranz 2,5 s.
+2. Jäger bleibt trotz „ab 8 verfügbar" standardmäßig deaktiviert (Konfiguration `enabled`).
+3. Heil-Fenster 40 s, Fallback bei Zeitablauf = „nicht eingreifen"; Verhalten der Alchemistin in Nächten ohne Rudelopfer (Kill-Intervall).
+4. Momentdauer 20 s; `day_start`-Tag (3) und `noRoleChance` (0,5); maximale Vergaben je Rolle (Standard unbegrenzt), `maxLivingHolders` 1.
+5. Quest-Freischaltung ohne möglichen Empfänger: entfällt (kein Ersatz).
+6. Öffentliche Aufdeckung beim Ausscheiden ersetzt den alten MVP-Default (§20) – im Playtest validieren.
+7. Jenseits-Nachrichten: Moderationsmethode (keine KI-Moderation geplant) offen; nicht umgesetzt.
+8. Klang-Assets/Lizenz: nur Hook vorhanden.
+9. Konto-/E-Mail-Verifizierungs-UI für das optionale dauerhafte Profil (Datenmodell + RPC vorbereitet); Altersuntergrenze (5) und Aufbewahrung der Fotos (12 h nach Spielende bzw. 2 Tage ohne Ende).
+10. Host-Rollenmodi (aus/möglich/garantiert): Engine + Spalte `rooms.role_modes` vorhanden, noch keine UI und kein Setter-RPC.
+11. Sonderaktionen laufen als einheitlicher Nacht-PIN-Bereich statt als eigene Phase innerhalb des Verdachtsmoments.
+
 ## Entschieden (in GAME_DESIGN.md v0.6 festgeschrieben)
 - **Spielerzahl 4–14.** Rudel: 4→1, 5→1, 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4. **Kleingruppen 4–6**: Balance offen; Kill-Frequenz (`nightKillInterval`, Standard jede Nacht), Rollenpool und Informationsmechaniken je Spielerzahl konfigurierbar (eigenes Größenband `tiny`); keine neue Sonderregel. Bei 4–5 Spielern sind aktuell keine Sonderrollen erlaubt (Mindestspielerzahl der Rollen ≥ 6).
 - **Grenzgänger standardmäßig deaktiviert**, vollständig implementiert und konfigurierbar (inkl. `borderwalkerReplacesWolf`); wird später separat getestet.

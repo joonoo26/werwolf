@@ -4,9 +4,29 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import type { PublicView } from '@dorf/engine';
 import { useNow } from '../lib/useNow';
 import { formatCountdown, spokenDuration } from '../logic/time';
+import { useRoom } from '../lib/room';
+import { usePhotoUrl } from '../lib/photos';
 import { Avatar, Text } from '../ui/primitives';
-import { t } from '../ui/strings';
+import { roleNames, t } from '../ui/strings';
 import { colors, MIN_TOUCH, radius, space } from '../ui/theme';
+
+/** Avatar mit Foto (falls vorhanden, signierte URL) oder automatischem Avatar. */
+export function PlayerAvatar({ id, name, alive, speaker, size }: { id: string; name: string; alive?: boolean; speaker?: boolean; size?: number }) {
+  const { players } = useRoom();
+  const url = usePhotoUrl(players.find((p) => p.id === id)?.photo_path);
+  return <Avatar name={name} alive={alive} speaker={speaker} size={size} photoUrl={url} />;
+}
+
+/** Öffentlich bekannte Eckdaten des Dorfes (konstant, verrät nichts Geheimes). */
+export function VillageSummary({ pub }: { pub: PublicView }) {
+  const out = pub.playerCount - pub.livingCount;
+  return (
+    <View accessible accessibilityLabel={`${t.village.residents(pub.playerCount)}, ${t.village.seats(pub.packSeats)}, ${t.village.alive(pub.livingCount)}, ${t.village.out(out)}`} style={{ alignItems: 'center', gap: 2 }}>
+      <Text v="label">{`${t.village.residents(pub.playerCount)} · ${t.village.seats(pub.packSeats)}`}</Text>
+      <Text v="small">{`${t.village.alive(pub.livingCount)} · ${t.village.out(out)}`}</Text>
+    </View>
+  );
+}
 
 export function PhaseGlyph({ phase, size = 28 }: { phase: PublicView['phase']; size?: number }) {
   const night = phase === 'night' || phase === 'dusk';
@@ -79,9 +99,10 @@ export function PlayersGrid({ pub, onPick, selected, selectable, columns = 5, ex
             style={{ width: `${Math.floor(100 / columns) - 2}%`, minWidth: 64, minHeight: MIN_TOUCH + 28, alignItems: 'center', gap: 4, opacity: onPick && !can ? 0.35 : 1 }}
           >
             <View style={sel ? { borderRadius: 40, borderWidth: 3, borderColor: colors.ember500, padding: 2 } : { padding: 5 }}>
-              <Avatar name={p.name} alive={p.alive} speaker={p.isSpeaker} />
+              <PlayerAvatar id={p.id} name={p.name} alive={p.alive} speaker={p.isSpeaker} />
             </View>
             <Text v="small" numberOfLines={1} style={{ color: p.alive ? colors.ivory100 : colors.ash500, textDecorationLine: p.alive ? 'none' : 'line-through' }}>{p.name}</Text>
+            {p.revealed && <Text v="label" style={{ fontSize: 10 }} numberOfLines={1}>{`${t.reveal.faction[p.revealed.faction]} · ${roleNames[p.revealed.role]}`}</Text>}
             {p.isSpeaker && <Text v="label" style={{ fontSize: 10, color: colors.fire400 }}>{t.dash.speaker}</Text>}
           </Pressable>
         );
@@ -110,11 +131,32 @@ export function TargetList({ pub, options, selected, onSelect, exclude }: { pub:
               borderRadius: radius.md, backgroundColor: colors.night800, borderWidth: 1.5, borderColor: sel ? colors.ember500 : colors.line,
             }}
           >
-            <Avatar name={p.name} size={40} />
+            <PlayerAvatar id={p.id} name={p.name} size={40} />
             <Text style={{ flex: 1 }}>{p.name}</Text>
             <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: sel ? colors.ember500 : colors.ivory300, alignItems: 'center', justifyContent: 'center' }}>
               {sel && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.ember500 }} />}
             </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Mehrfachauswahl (Verdacht vor der Nacht). */
+export function MultiTargetList({ pub, options, selected, onToggle }: { pub: PublicView; options: string[]; selected: string[]; onToggle: (id: string) => void }) {
+  return (
+    <View style={{ gap: space.sm }}>
+      {options.map((id) => {
+        const p = pub.players.find((x) => x.id === id);
+        if (!p) return null;
+        const sel = selected.includes(id);
+        return (
+          <Pressable key={id} accessibilityRole="checkbox" accessibilityState={{ checked: sel }} accessibilityLabel={p.name} onPress={() => onToggle(id)}
+            style={{ minHeight: MIN_TOUCH + 12, flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.md, borderRadius: radius.md, backgroundColor: colors.night800, borderWidth: 1.5, borderColor: sel ? colors.ember500 : colors.line }}>
+            <PlayerAvatar id={p.id} name={p.name} size={40} />
+            <Text style={{ flex: 1 }}>{p.name}</Text>
+            <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: sel ? colors.ember500 : colors.ivory300, backgroundColor: sel ? colors.ember500 : 'transparent' }} />
           </Pressable>
         );
       })}

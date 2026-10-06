@@ -3,9 +3,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { errorText, joinDisplay, joinRoom, reclaimPlayer } from '../lib/api';
+import { uploadPhoto } from '../lib/photos';
 import { saveSession } from '../lib/storage';
 import { ensureSession } from '../lib/supabase';
 import { isValidPin, normalizeCode, normalizePin } from '../logic/lock';
+import { ProfileForm, emptyProfile, profileValid, type ProfileDraft } from '../ui/ProfileForm';
 import { Button, Field, Screen, Text } from '../ui/primitives';
 import { t } from '../ui/strings';
 import { colors, space } from '../ui/theme';
@@ -20,9 +22,10 @@ export default function Join() {
   const [reclaim, setReclaim] = useState(false);
   const [scan, setScan] = useState(false);
   const [perm, askPerm] = useCameraPermissions();
+  const [profile, setProfile] = useState<ProfileDraft>(emptyProfile);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const ok = code.length === 6 && (display || (name.trim().length > 0 && isValidPin(pin)));
+  const ok = code.length === 6 && (display || (name.trim().length > 0 && isValidPin(pin) && (reclaim || profileValid(profile))));
 
   const submit = async () => {
     setBusy(true); setErr(null);
@@ -34,8 +37,9 @@ export default function Join() {
         router.replace(`/display/${r.room_id}`);
         return;
       }
-      const r = reclaim ? await reclaimPlayer(code, name.trim(), pin) : await joinRoom(code, name.trim(), pin);
+      const r = reclaim ? await reclaimPlayer(code, name.trim(), pin) : await joinRoom(code, name.trim(), pin, { age: Number(profile.age), gender: profile.gender!, hair: profile.hair!, eyes: profile.eyes! });
       if ('ok' in r && !r.ok) { setErr(t.errors.wrong_pin ?? t.common.error); return; }
+      if (!reclaim && profile.photoB64) await uploadPhoto(r.room_id, r.player_id, profile.photoB64);
       await saveSession({ roomId: r.room_id, code: r.code });
       router.replace(`/room/${r.room_id}`);
     } catch (e) { setErr(errorText(e, t.errors, t.common.error)); } finally { setBusy(false); }
@@ -62,6 +66,7 @@ export default function Join() {
             <>
               <Field label={t.create.name} value={name} onChangeText={setName} maxLength={20} autoCapitalize="words" />
               <Field label={t.create.pin} value={pin} onChangeText={(v) => setPin(normalizePin(v))} secure keyboardType="number-pad" maxLength={6} hint={reclaim ? undefined : t.create.pinHint} />
+              {!reclaim && <ProfileForm value={profile} onChange={setProfile} name={name} />}
               <Button variant="ghost" label={reclaim ? t.common.back : t.join.reclaim} onPress={() => setReclaim(!reclaim)} />
             </>
           )}

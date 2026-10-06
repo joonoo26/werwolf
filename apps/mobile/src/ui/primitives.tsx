@@ -2,7 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  AccessibilityInfo, Pressable, StyleSheet, Text as RNText, TextInput, View,
+  AccessibilityInfo, Image, Pressable, StyleSheet, Text as RNText, TextInput, View,
   type StyleProp, type TextProps, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -120,20 +120,31 @@ export function initials(name: string): string {
 }
 
 /** Lebend: warmer Ring. Ausgeschieden: entsättigt + Kreuz-Symbol + Text-Status (nie nur Farbe). */
-export function Avatar({ name, alive = true, size = 52, speaker }: { name: string; alive?: boolean; size?: number; speaker?: boolean }) {
+/** Ohne Foto: ruhiger Auto-Avatar (Initialen, Farbton aus dem Namen). */
+function hue(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `hsl(${h}, 18%, 24%)`;
+}
+
+export function Avatar({ name, alive = true, size = 52, speaker, photoUrl }: { name: string; alive?: boolean; size?: number; speaker?: boolean; photoUrl?: string | null }) {
   return (
     <View
       accessible
       accessibilityLabel={`${name}${speaker ? ', Dorfsprecher' : ''}${alive ? '' : ', ausgeschieden'}`}
       style={{
-        width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center',
+        width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
         borderWidth: speaker ? 3 : 2, borderColor: alive ? colors.fire400 : colors.ash500,
-        backgroundColor: alive ? colors.night800 : colors.night900,
+        backgroundColor: alive ? hue(name) : colors.night900,
       }}
     >
-      <RNText style={{ fontFamily: fonts.uiSemi, fontSize: size * 0.34, color: alive ? colors.ivory100 : colors.ash500, textDecorationLine: alive ? 'none' : 'line-through' }}>
-        {initials(name)}
-      </RNText>
+      {photoUrl ? (
+        <Image source={{ uri: photoUrl }} accessibilityIgnoresInvertColors style={{ width: size, height: size, opacity: alive ? 1 : 0.4 }} />
+      ) : (
+        <RNText style={{ fontFamily: fonts.uiSemi, fontSize: size * 0.34, color: alive ? colors.ivory100 : colors.ash500, textDecorationLine: alive ? 'none' : 'line-through' }}>
+          {initials(name)}
+        </RNText>
+      )}
       {!alive && (
         <View style={[styles.cross, { width: size * 0.34, height: size * 0.34, borderRadius: size * 0.17 }]}>
           <RNText style={{ color: colors.ivory300, fontSize: size * 0.2, lineHeight: size * 0.24, fontFamily: fonts.uiSemi }}>×</RNText>

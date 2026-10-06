@@ -8,7 +8,8 @@ import { Backdrop, Button, Card, Text, haptic, useReduceMotion } from '../ui/pri
 import { Hearth } from '../ui/art';
 import { roleNames, t } from '../ui/strings';
 import { colors, motion, space } from '../ui/theme';
-import { PhaseRing, PlayersGrid, TargetList } from './parts';
+import { MultiTargetList, PhaseRing, PlayersGrid, TargetList, VillageSummary } from './parts';
+import { PrivateArea } from './PrivateArea';
 import { useAct } from './useAct';
 
 type Props = { pub: PublicView };
@@ -73,7 +74,7 @@ export function DayStage({ pub }: Props) {
       <Center>
         <PhaseRing pub={pub} />
         <Text v="small" style={{ textAlign: 'center' }}>{t.phaseHint.day}</Text>
-        <Text v="label">{t.dash.alive(pub.livingCount)}</Text>
+        <VillageSummary pub={pub} />
       </Center>
 
       {quest && (
@@ -193,6 +194,7 @@ export function CouncilStage({ pub }: Props) {
             <Text v="display" style={{ textAlign: 'center', fontSize: 40, lineHeight: 46, color: colors.ember400 }} accessibilityLiveRegion="polite">
               {name(c.banished)} {t.council.banished}
             </Text>
+            <Reveal pub={pub} id={c.banished} />
             <Tally pub={pub} />
           </Center>
         )}
@@ -218,6 +220,13 @@ function Tally({ pub }: Props) {
   );
 }
 
+/** Beim Ausscheiden für alle gleichzeitig: Fraktion und Rolle (öffentliche Aufdeckung). */
+function Reveal({ pub, id }: { pub: PublicView; id: string | null }) {
+  const r = pub.players.find((p) => p.id === id)?.revealed;
+  if (!r) return null;
+  return <Text v="title" style={{ textAlign: 'center', color: colors.ivory300 }} accessibilityLiveRegion="polite">{`${t.reveal.faction[r.faction]} · ${roleNames[r.role]}`}</Text>;
+}
+
 // ───────── Dämmerung / Morgen (Bestätigung im Klassik-Modus) ─────────
 export function DuskStage({ pub }: Props) {
   const { alive } = useMe();
@@ -240,7 +249,13 @@ export function DuskStage({ pub }: Props) {
 
 export function NightStage({ pub }: Props) {
   const reduce = useReduceMotion();
+  const { me, alive } = useMe();
+  const { act, busy, error } = useAct();
   const pulse = useRef(new Animated.Value(0.6)).current;
+  const [pick, setPick] = useState<string[]>([]);
+  const [sent, setSent] = useState(false);
+  const [priv, setPriv] = useState(false);
+  useEffect(() => { setPick([]); setSent(false); }, [pub.day]);
   useEffect(() => {
     if (reduce) return;
     const loop = Animated.loop(Animated.sequence([
@@ -250,14 +265,44 @@ export function NightStage({ pub }: Props) {
     loop.start();
     return () => loop.stop();
   }, [pulse, reduce]);
+  const heal = pub.nightStage === 'heal';
+  const need = pub.suspicionCount;
+  const options = pub.players.filter((p) => p.alive && p.id !== me?.id).map((p) => p.id);
+  if (priv && alive) {
+    return (
+      <Backdrop tone="night">
+        <View style={{ flex: 1 }}>
+          <Button variant="ghost" label={t.common.back} onPress={() => setPriv(false)} style={{ alignSelf: 'flex-start' }} />
+          <PrivateArea pub={pub} />
+        </View>
+      </Backdrop>
+    );
+  }
   return (
     <Backdrop tone="night">
       <Pad>
         <Center>
           <Animated.View style={{ opacity: reduce ? 1 : pulse }}><PhaseRing pub={pub} /></Animated.View>
-          <Text v="display" style={{ textAlign: 'center' }}>{t.night.title}</Text>
-          <Text v="small" style={{ textAlign: 'center' }}>{t.night.hint}</Text>
+          <Text v="display" style={{ textAlign: 'center' }}>{heal ? t.night.healTitle : t.night.title}</Text>
+          {heal && alive && <Text v="small" style={{ textAlign: 'center' }}>{t.night.healHint}</Text>}
         </Center>
+        {alive && !heal && !sent && need > 0 && (
+          <>
+            <Text v="title" style={{ textAlign: 'center' }}>{t.night.question}</Text>
+            <Text v="small" style={{ textAlign: 'center' }}>{t.night.pick(need)}</Text>
+            <MultiTargetList pub={pub} options={options} selected={pick} onToggle={(id) => setPick((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : cur.length < need ? [...cur, id] : cur))} />
+            <Button label={`${t.night.send} (${pick.length}/${need})`} disabled={pick.length !== need} busy={busy} onPress={async () => { if (await act({ type: 'suspect', targets: pick })) setSent(true); }} />
+          </>
+        )}
+        {alive && !heal && sent && <Text style={{ textAlign: 'center', color: colors.fire400 }} accessibilityLiveRegion="polite">{t.night.saved}</Text>}
+        {alive && (
+          <View style={{ gap: space.sm }}>
+            <Button variant="secondary" label={`${t.night.privateOpen} 🔒`} onPress={() => setPriv(true)} accessibilityHint={t.night.privateHint} />
+            <Text v="small" style={{ textAlign: 'center' }}>{t.night.privateHint}</Text>
+          </View>
+        )}
+        <VillageSummary pub={pub} />
+        <Err code={error} />
       </Pad>
     </Backdrop>
   );
@@ -274,7 +319,7 @@ export function MorningStage({ pub }: Props) {
         <PhaseRing pub={pub} />
         <Text v="display" style={{ textAlign: 'center' }}>{t.phase.morning}</Text>
         <Text style={{ textAlign: 'center' }}>{deaths.length ? t.morning.some : t.morning.none}</Text>
-        {deaths.map((n) => <Text key={n} v="title" style={{ color: colors.ember400 }}>{n}</Text>)}
+        {(pub.morningDeaths ?? []).map((id) => <View key={id} style={{ alignItems: 'center' }}><Text v="title" style={{ color: colors.ember400 }}>{pub.players.find((p) => p.id === id)?.name}</Text><Reveal pub={pub} id={id} /></View>)}
       </Center>
       <PlayersGrid pub={pub} />
       {alive && pub.advance && <Button label={ready ? t.dash.readyWithdraw : t.dash.readyDay} busy={busy} onPress={async () => { if (await act({ type: 'ready', topic: 'advance', value: !ready })) setReady(!ready); }} />}
@@ -304,8 +349,27 @@ export function EndStage({ pub }: Props) {
             );
           })}
         </Card>
+        <Retrospective pub={pub} />
       </Pad>
     </Backdrop>
+  );
+}
+
+function Retrospective({ pub }: Props) {
+  const r = pub.retrospective;
+  if (!r) return null;
+  const name = (id: string) => pub.players.find((p) => p.id === id)?.name ?? '?';
+  const lines = [
+    ...r.suspicionStreaks.map((x) => t.ended.streak(name(x.by), name(x.target), x.sinceDay)),
+    ...r.neverSuspected.map((id) => t.ended.never(name(id))),
+    ...r.neverSuspectedPack.map((id) => t.ended.noWolf(name(id))),
+  ];
+  if (lines.length === 0) return null;
+  return (
+    <Card style={{ gap: space.sm }}>
+      <Text v="label">{t.ended.retro}</Text>
+      {lines.slice(0, 12).map((l, i) => <Text key={i} v="small">{l}</Text>)}
+    </Card>
   );
 }
 

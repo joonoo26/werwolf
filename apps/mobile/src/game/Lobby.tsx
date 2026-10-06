@@ -3,8 +3,9 @@ import { ScrollView, Share, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { leaveRoom, removePlayer, setReady, startGame, errorText } from '../lib/api';
 import { useRoom } from '../lib/room';
-import { Avatar, Backdrop, Button, Card, Text } from '../ui/primitives';
+import { Backdrop, Button, Card, Text } from '../ui/primitives';
 import { t } from '../ui/strings';
+import { PlayerAvatar } from './parts';
 import { colors, space } from '../ui/theme';
 
 export function Lobby({ onLeave }: { onLeave: () => void }) {
@@ -36,7 +37,7 @@ export function Lobby({ onLeave }: { onLeave: () => void }) {
           <Text v="small">{t.lobby.need}</Text>
           {players.map((p) => (
             <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 56 }}>
-              <Avatar name={p.name} size={44} />
+              <PlayerAvatar id={p.id} name={p.name} size={44} />
               <Text style={{ flex: 1 }}>{p.name}{p.user_id === room.host_user_id ? ' · Host' : ''}</Text>
               <Text v="small" style={{ color: p.ready ? colors.fire400 : colors.ash500 }}>{p.ready ? `✓ ${t.lobby.ready}` : t.lobby.notReady}</Text>
               {isHost && p.id !== me.id && <Button variant="ghost" label={t.lobby.remove} onPress={() => void run(() => removePlayer(roomId, p.id))} />}

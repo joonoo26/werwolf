@@ -13,6 +13,8 @@ interface PrivateCtx {
   /** Liefert Wartezeit in Sekunden bei Sperre, 0 bei Erfolg, -1 bei falschem PIN. */
   unlock: (pin: string) => Promise<number>;
   lock: () => void;
+  /** Erzwingt eine frische PIN-Eingabe (Beginn eines geheimen Moments). */
+  relock: () => void;
   touch: () => void;
 }
 
@@ -39,6 +41,10 @@ export function PrivateProvider({ children, fixture }: { children: ReactNode; fi
     setData(null); // geheime Daten verlassen den Speicher
     void lockPrivate(roomId).catch(() => {});
   }, [roomId]);
+
+  const relock = useCallback(() => {
+    if (!fixture) lock();
+  }, [lock, fixture]);
 
   const touch = useCallback(() => {
     last.current = Date.now();
@@ -113,7 +119,7 @@ export function PrivateProvider({ children, fixture }: { children: ReactNode; fi
     };
   }, [unlocked, roomId, lock, fixture]);
 
-  const value = useMemo(() => ({ unlocked, data, unread, unlock, lock, touch }), [unlocked, data, unread, unlock, lock, touch]);
+  const value = useMemo(() => ({ unlocked, data, unread, unlock, lock, relock, touch }), [unlocked, data, unread, unlock, lock, relock, touch]);
   return (
     <Ctx.Provider value={value}>
       <View style={{ flex: 1 }} onTouchStart={touch}>

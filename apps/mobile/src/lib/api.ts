@@ -1,4 +1,4 @@
-import type { Command } from '@dorf/engine';
+import type { Command, EyeColor, Gender, HairColor } from '@dorf/engine';
 import { supabase } from './supabase';
 
 export class ApiError extends Error {
@@ -25,9 +25,20 @@ export interface RoomRef {
   player_id: string;
 }
 
-export const createRoom = (name: string, pin: string, mode: 'classic' | 'evening', minutes?: number) =>
-  rpc<RoomRef>('create_room', { p_name: name, p_pin: pin, p_mode: mode, p_target_minutes: mode === 'evening' ? minutes : null });
-export const joinRoom = (code: string, name: string, pin: string) => rpc<RoomRef>('join_room', { p_code: code, p_name: name, p_pin: pin });
+export interface ProfileInput {
+  age: number;
+  gender: Gender;
+  hair: HairColor;
+  eyes: EyeColor;
+}
+const profileArgs = (p: ProfileInput) => ({ p_age: p.age, p_gender: p.gender, p_hair: p.hair, p_eyes: p.eyes });
+
+export const createRoom = (name: string, pin: string, profile: ProfileInput, mode: 'classic' | 'evening', minutes?: number) =>
+  rpc<RoomRef>('create_room', { p_name: name, p_pin: pin, ...profileArgs(profile), p_mode: mode, p_target_minutes: mode === 'evening' ? minutes : null });
+export const joinRoom = (code: string, name: string, pin: string, profile: ProfileInput) =>
+  rpc<RoomRef>('join_room', { p_code: code, p_name: name, p_pin: pin, ...profileArgs(profile) });
+export const setPhoto = (room: string, path: string | null) => rpc<void>('set_photo', { p_room: room, p_path: path });
+export const saveNote = (room: string, about: string, body: string) => rpc<void>('save_note', { p_room: room, p_about: about, p_body: body });
 export const reclaimPlayer = (code: string, name: string, pin: string) =>
   rpc<RoomRef & { ok: boolean }>('reclaim_player', { p_code: code, p_name: name, p_pin: pin });
 export const joinDisplay = (code: string) => rpc<{ room_id: string; code: string }>('join_display', { p_code: code });

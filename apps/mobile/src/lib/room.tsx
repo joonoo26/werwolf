@@ -19,6 +19,7 @@ export interface PlayerRow {
   name: string;
   ready: boolean;
   alive: boolean;
+  photo_path?: string | null;
 }
 
 interface RoomCtx {
@@ -70,7 +71,7 @@ export function RoomProvider({ roomId, userId, children, fixture }: { roomId: st
   const refresh = useCallback(async () => {
     const [r, p, s] = await Promise.all([
       supabase.from('rooms').select('*').eq('id', roomId).maybeSingle(),
-      supabase.from('players').select('id,user_id,name,ready,alive').eq('room_id', roomId).order('joined_at'),
+      supabase.from('players').select('id,user_id,name,ready,alive,photo_path').eq('room_id', roomId).order('joined_at'),
       supabase.from('public_state').select('version,data').eq('room_id', roomId).maybeSingle(),
     ]);
     if (r.data) setRoom(r.data as RoomRow);

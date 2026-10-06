@@ -9,8 +9,8 @@ import { Hearth } from '../ui/art';
 import { Avatar, Backdrop, Text, useReduceMotion } from '../ui/primitives';
 import { roleNames, t } from '../ui/strings';
 import { colors, motion, space } from '../ui/theme';
-import { ImpulseOverlay } from './ImpulseOverlay';
-import { PhaseGlyph } from './parts';
+import { MomentOverlay } from './MomentOverlay';
+import { PhaseGlyph, VillageSummary } from './parts';
 
 /**
  * iPad-Dorfanzeige: Bühne, nicht vergrößertes Handy. Nur öffentliche Daten, keine Interaktion,
@@ -48,19 +48,19 @@ export function DisplayView() {
   } else if (c?.step === 'showdown') {
     center = <Text v="huge" style={{ fontSize: 120, lineHeight: 130, color: beat === 3 ? colors.ember400 : colors.ivory100 }}>{beat === null ? '…' : t.council.countdown[beat]}</Text>;
   } else if (c?.step === 'result') {
-    center = (<><Text v="label">{t.council.result}</Text><Text v="display" style={{ fontSize: 48, textAlign: 'center', color: colors.ember400 }}>{nameOf(c.banished)} {t.council.banished}</Text></>);
+    center = (<><Text v="label">{t.council.result}</Text><Text v="display" style={{ fontSize: 48, textAlign: 'center', color: colors.ember400 }}>{nameOf(c.banished)} {t.council.banished}</Text>{revealLine(pub, c.banished)}</>);
   } else if (c?.step === 'tiebreak') {
     center = <Text v="display" style={{ textAlign: 'center' }}>{t.council.tiebreak}</Text>;
   } else if (pub.phase === 'morning') {
     const names = (pub.morningDeaths ?? []).map(nameOf);
-    center = (<><Text v="display" style={{ textAlign: 'center' }}>{names.length ? t.morning.some : t.morning.none}</Text>{names.map((n) => <Text key={n} v="display" style={{ color: colors.ember400 }}>{n}</Text>)}</>);
+    center = (<><Text v="display" style={{ textAlign: 'center' }}>{names.length ? t.morning.some : t.morning.none}</Text>{(pub.morningDeaths ?? []).map((id) => <View key={id} style={{ alignItems: 'center' }}><Text v="display" style={{ color: colors.ember400 }}>{nameOf(id)}</Text>{revealLine(pub, id)}</View>)}</>);
   } else {
     center = (
       <>
         <PhaseGlyph phase={pub.phase} size={56} />
         <Text v="display" style={{ fontSize: 52 }} accessibilityRole="header">{heading}</Text>
         {remaining !== null && <Text v="huge" style={{ color: colors.fire400 }}>{formatCountdown(remaining)}</Text>}
-        <Text style={{ color: colors.ivory300 }}>{c ? (c.step === 'discussion' ? t.council.discussionHint : t.council.votingHint) : t.phaseHint[pub.phase]}</Text>
+        <Text style={{ color: colors.ivory300 }}>{c ? (c.step === 'discussion' ? t.council.discussionHint : t.council.votingHint) : pub.nightStage === 'heal' ? t.night.healTitle : t.phaseHint[pub.phase]}</Text>
         {c?.voteReady && <Text v="title" style={{ color: colors.fire400 }}>{t.council.voteReady}</Text>}
         {pub.councilReady && <Text v="title" style={{ color: colors.fire400 }}>{t.dash.councilReady}</Text>}
         {c?.progress && <Text v="small">{t.council.waitingVotes(c.progress.cast, c.progress.total)}</Text>}
@@ -89,16 +89,21 @@ export function DisplayView() {
           })}
           <View style={{ alignItems: 'center', gap: space.sm, maxWidth: size * 0.55 }}>{center}</View>
         </View>
-        {pub.phase !== 'ended' && <Text v="label" style={{ position: 'absolute', bottom: space.xl }}>{t.dash.alive(pub.livingCount)}</Text>}
+        {pub.phase !== 'ended' && <View style={{ position: 'absolute', bottom: space.xl }}><VillageSummary pub={pub} /></View>}
         {pub.phase === 'ended' && pub.reveal && (
           <View style={{ position: 'absolute', bottom: space.xl, flexDirection: 'row', flexWrap: 'wrap', gap: space.lg, justifyContent: 'center' }}>
             {pub.reveal.map((r) => <Text key={r.id} v="small">{nameOf(r.id)} · {roleNames[r.role]}</Text>)}
           </View>
         )}
       </Animated.View>
-      <ImpulseOverlay impulse={pub.impulse} />
+      <MomentOverlay moment={pub.moment} display />
     </Backdrop>
   );
+}
+
+function revealLine(pub: PublicView, id: string | null) {
+  const r = pub.players.find((p) => p.id === id)?.revealed;
+  return r ? <Text v="title" style={{ color: colors.ivory300 }}>{`${t.reveal.faction[r.faction]} · ${roleNames[r.role]}`}</Text> : null;
 }
 
 export type { PublicView };

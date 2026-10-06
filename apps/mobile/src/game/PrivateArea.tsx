@@ -1,11 +1,13 @@
 import type { AbilitySpec, PrivateView, PublicView } from '@dorf/engine';
-import { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
+import { sendCommand } from '../lib/api';
+import { useNow } from '../lib/useNow';
 import { useRoom } from '../lib/room';
 import { usePrivate } from '../lib/private';
-import { Button, Card, Text } from '../ui/primitives';
-import { abilityName, roleNames, roleText, t } from '../ui/strings';
-import { colors, space } from '../ui/theme';
+import { Button, Card, Text, haptic } from '../ui/primitives';
+import { abilityName, lookoutStatementText, observerHintText, roleNames, roleText, t } from '../ui/strings';
+import { colors, MIN_TOUCH, radius, space } from '../ui/theme';
 import { PinGate } from './PinGate';
 import { TargetList } from './parts';
 import { useAct } from './useAct';
@@ -51,17 +53,21 @@ function PrivateBody({ pub }: { pub: PublicView }) {
       )}
       {data.lastShot && <LastShot pub={pub} data={data} />}
       {data.packTarget && data.alive && <PackTarget pub={pub} data={data} />}
+      {data.heal && <HealPrompt victim={data.heal.victim} decided={data.heal.decided} />}
       <NightAction pub={pub} data={data} />
+      {data.lookout && data.alive && <LookoutBox available={data.lookout.available} />}
+      {data.observation && data.alive && <ObserverBox obs={data.observation} />}
       <Notes pub={pub} data={data} />
     </ScrollView>
   );
 }
 
-function SideChoice() {
+export function SideChoice() {
   const { act, busy } = useAct();
   return (
     <Card style={{ gap: space.md }}>
       <Text v="label">{t.private.side}</Text>
+      <Text v="small">{t.moment.sideQuestion}</Text>
       <Button variant="secondary" label={t.private.sideVillage} busy={busy} onPress={() => void act({ type: 'choose_side', side: 'village' })} />
       <Button variant="secondary" label={t.private.sidePack} busy={busy} onPress={() => void act({ type: 'choose_side', side: 'pack' })} />
     </Card>
@@ -86,6 +92,7 @@ function PackTarget({ pub, data }: { pub: PublicView; data: PrivateView }) {
   const { act, busy } = useAct();
   const [pick, setPick] = useState<string | null>(data.packTarget?.mine ?? null);
   if (pub.phase !== 'day' && pub.phase !== 'dusk' && pub.phase !== 'night') return null;
+  if (data.packTarget!.locked) return <Card><Text v="label">{t.private.packTarget}</Text><Text v="small">{t.private.chosen}</Text></Card>;
   return (
     <Card style={{ gap: space.md }}>
       <Text v="label">{t.private.packTarget}</Text>
@@ -97,7 +104,7 @@ function PackTarget({ pub, data }: { pub: PublicView; data: PrivateView }) {
 }
 
 function NightAction({ pub, data }: { pub: PublicView; data: PrivateView }) {
-  if (pub.phase !== 'night' || !data.alive) return null;
+  if (pub.phase !== 'night' || pub.nightStage !== 'act' || !data.alive) return null;
   return (
     <View style={{ gap: space.lg }}>
       {data.abilities.length === 0 ? (
@@ -167,11 +174,89 @@ function Notes({ pub, data }: { pub: PublicView; data: PrivateView }) {
         } else if (n.kind === 'group_result') {
           const names = (d.targets as string[]).map((id) => nameOf(pub, id)).join(', ');
           line = d.unclear ? `${names}: Das Ergebnis bleibt unklar.` : `${names}: ${d.packPresent ? 'Mindestens ein Rudelmitglied ist dabei.' : 'Hier ist kein Rudelmitglied.'}`;
+        } else if (n.kind === 'lookout_result') {
+          line = `${nameOf(pub, String(d.by))} hat jemanden bemerkt: ${lookoutStatementText(d.statement as Parameters<typeof lookoutStatementText>[0])}`;
+        } else if (n.kind === 'lookout_miss') {
+          line = `${t.lookout.missTitle}. ${t.lookout.miss}`;
         } else if (n.kind === 'role_gained') {
           line = `Du hast eine neue Rolle erhalten: ${roleNames[d.role as keyof typeof roleNames]}.`;
         }
         return line ? <Text key={n.id}>{`Tag ${n.day} · ${line}`}</Text> : null;
       })}
+    </Card>
+  );
+}
+
+export function HealPrompt({ victim, decided }: { victim: string; decided: boolean | null }) {
+  const { pub } = useRoom();
+  const { act, busy } = useAct();
+  const [local, setLocal] = useState<boolean | null>(decided);
+  const done = local !== null;
+  const name = pub?.players.find((p) => p.id === victim)?.name ?? '?';
+  const send = async (save: boolean) => { if (await act({ type: 'heal_decision', save })) setLocal(save); };
+  return (
+    <Card style={{ gap: space.md }}>
+      <Text v="label">{t.moment.packDecided.title}</Text>
+      <Text>{t.moment.healQuestion(name)}</Text>
+      {done ? <Text v="small">{t.moment.healSaved}</Text> : (
+        <>
+          <Button label={t.moment.heal} busy={busy} onPress={() => void send(true)} />
+          <Button variant="secondary" label={t.moment.noHeal} busy={busy} onPress={() => void send(false)} />
+        </>
+      )}
+    </Card>
+  );
+}
+
+function LookoutBox({ available }: { available: boolean }) {
+  const { act, busy } = useAct();
+  const { pub } = useRoom();
+  if (pub?.phase !== 'night' || pub.nightStage !== 'act') return null;
+  return (
+    <Card style={{ gap: space.sm }}>
+      <Text v="label">{t.lookout.button}</Text>
+      <Text v="small">{available ? t.lookout.hint : t.lookout.used}</Text>
+      {available && <Button variant="secondary" label={t.lookout.button} busy={busy} onPress={() => void act({ type: 'lookout' })} />}
+    </Card>
+  );
+}
+
+/** Beobachter: gedrückt halten, solange man sich traut. Lebenszeichen alle Sekunde; Loslassen oder Hintergrund beendet das Fenster. */
+function ObserverBox({ obs }: { obs: NonNullable<PrivateView['observation']> }) {
+  const { pub, serverNow, roomId: rid } = useRoom();
+  const [holding, setHolding] = useState(false);
+  const now = useNow(250);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stop = useCallback(() => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+    setHolding(false);
+    void sendCommand(rid, { type: 'observe', action: 'stop' }).catch(() => {});
+  }, [rid]);
+  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+  if (pub?.phase !== 'night' || pub.nightStage !== 'act') return null;
+  const left = obs.open && obs.startedAt ? Math.max(0, Math.ceil((obs.windowMs - (serverNow() - obs.startedAt)) / 1000)) : null;
+  void now;
+  const start = () => {
+    if (!obs.available || holding) return;
+    setHolding(true);
+    haptic('light');
+    void sendCommand(rid, { type: 'observe', action: 'start' }).catch(() => setHolding(false));
+    timer.current = setInterval(() => void sendCommand(rid, { type: 'observe', action: 'ping' }).catch(() => {}), 1000);
+  };
+  return (
+    <Card style={{ gap: space.md }}>
+      <Text v="label">{t.observer.title}</Text>
+      <Text v="small">{obs.available || obs.open ? t.observer.hold : t.observer.used}</Text>
+      {(obs.available || obs.open) && (
+        <Pressable accessibilityRole="button" accessibilityLabel={t.observer.holdButton} accessibilityHint={t.observer.hold}
+          onPressIn={start} onPressOut={stop}
+          style={{ minHeight: MIN_TOUCH * 2, borderRadius: radius.lg, borderWidth: 2, borderColor: holding ? colors.ember500 : colors.line, backgroundColor: colors.night800, alignItems: 'center', justifyContent: 'center' }}>
+          <Text v="title">{holding && left !== null ? `${left} s` : t.observer.holdButton}</Text>
+        </Pressable>
+      )}
+      {obs.open && obs.hint && <Text v="title" style={{ textAlign: 'center' }} accessibilityLiveRegion="polite">{observerHintText(obs.hint)}</Text>}
+      {holding && <Text v="small">{t.observer.releasing}</Text>}
     </Card>
   );
 }
