@@ -1,0 +1,11 @@
+project_id = "das-dorf"
+
+[auth]
+enable_signup = true
+enable_anonymous_sign_ins = true
+
+[functions.game]
+verify_jwt = false # Authentifizierung erfolgt in der Funktion selbst (sweep nutzt ein Shared Secret)
+
+[realtime]
+enabled = true
