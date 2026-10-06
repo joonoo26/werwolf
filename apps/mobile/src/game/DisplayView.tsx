@@ -60,7 +60,7 @@ export function DisplayView() {
         <PhaseGlyph phase={pub.phase} size={56} />
         <Text v="display" style={{ fontSize: 52 }} accessibilityRole="header">{heading}</Text>
         {remaining !== null && <Text v="huge" style={{ color: colors.fire400 }}>{formatCountdown(remaining)}</Text>}
-        <Text style={{ color: colors.ivory300 }}>{c ? t.council[c.step === 'nomination' ? 'nomination' : c.step === 'defense' ? 'defenseHint' : 'votingHint'] : t.phaseHint[pub.phase]}</Text>
+        <Text style={{ color: colors.ivory300 }}>{c ? t.council.votingHint : t.phaseHint[pub.phase]}</Text>
         {pub.councilReady && <Text v="title" style={{ color: colors.fire400 }}>{t.dash.councilReady}</Text>}
         {c?.progress && <Text v="small">{t.council.waitingVotes(c.progress.cast, c.progress.total)}</Text>}
         {quest && <View style={{ maxWidth: size * 0.6, alignItems: 'center', gap: 6 }}><Text v="label">{t.dash.quest}</Text><Text v="title" style={{ textAlign: 'center' }}>{quest.title}</Text><Text v="small" style={{ textAlign: 'center' }}>{quest.goal}</Text></View>}
@@ -76,7 +76,7 @@ export function DisplayView() {
           {pub.players.map((p, i) => {
             const a = (i / pub.players.length) * 2 * Math.PI - Math.PI / 2;
             const r = size / 2 - 40;
-            const cand = c?.candidates.includes(p.id);
+            const cand = false;
             return (
               <View key={p.id} style={{ position: 'absolute', left: size / 2 + Math.cos(a) * r - 42, top: size / 2 + Math.sin(a) * r - 42, width: 84, alignItems: 'center', gap: 2 }}>
                 <View style={cand ? { borderWidth: 3, borderColor: colors.ember500, borderRadius: 40, padding: 2 } : { padding: 5 }}>

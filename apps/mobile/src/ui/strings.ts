@@ -30,7 +30,7 @@ export const t = {
   dash: { alive: (n: number) => `${n} im Dorf`, untilNight: 'Bis zur Nacht', untilNext: 'Noch', councilReady: 'Das Dorf ist bereit für einen Dorfrat.', readyCouncil: 'Für Dorfrat bereit', readyWithdraw: 'Bereitschaft zurücknehmen', startCouncil: 'Dorfrat beginnen', questView: 'Quest ansehen', readyNight: 'Bereit für Nacht', readyDay: 'Bereit für Tag', ready: (r: number, n: number) => `${r} von ${n} bereit`, speaker: 'Dorfsprecher', quest: 'Quest', questDone: 'Aufgabe erledigt', questDoneSet: 'Erledigt' },
   tabs: { village: 'Dorf', messages: 'Nachrichten', players: 'Spieler', more: 'Mehr' },
   council: {
-    nomination: 'Wen bringt ihr ins Gespräch?', nominationHint: 'Nenne eine Person, über die ihr sprechen solltet.', defense: 'Verteidigung', defenseHint: 'Die Genannten sprechen für sich.', voting: 'Deine Stimme', votingHint: 'Sie ist verbindlich, sobald du sie setzt.', locked: 'Deine Stimme ist gesetzt.', waitingVotes: (c: number, n: number) => `${c} von ${n} Stimmen gesperrt`, countdown: ['3', '2', '1', 'ZEIGT!'], pointNow: 'Zeigt gleichzeitig auf eure Wahl.', tiebreak: 'Gleichstand', tiebreakSpeaker: 'Als Dorfsprecher entscheidest du.', tiebreakWait: 'Der Dorfsprecher entscheidet.', banished: 'verlässt das Dorf.', result: 'Das Ergebnis', votes: (n: number) => (n === 1 ? '1 Stimme' : `${n} Stimmen`), confirm: 'Stimme setzen', nominate: 'Nennen', decide: 'Entscheiden',
+    voting: 'Deine Stimme', votingHint: 'Wähle eine Person. Deine Stimme ist verbindlich, sobald du sie setzt.', locked: 'Deine Stimme ist gesetzt.', waitingVotes: (c: number, n: number) => `${c} von ${n} Stimmen gesperrt`, countdown: ['3', '2', '1', 'ZEIGT!'], pointNow: 'Zeigt gleichzeitig auf eure Wahl.', tiebreak: 'Gleichstand', tiebreakSpeaker: 'Als Dorfsprecher entscheidest du.', tiebreakWait: 'Der Dorfsprecher entscheidet.', banished: 'verlässt das Dorf.', result: 'Das Ergebnis', votes: (n: number) => (n === 1 ? '1 Stimme' : `${n} Stimmen`), confirm: 'Stimme setzen', decide: 'Entscheiden',
   },
   night: { title: 'Die Nacht beginnt.', hint: 'Schließt die Augen nicht – sprecht leise. Alles Weitere geschieht im Privaten.' },
   morning: { none: 'Diese Nacht ist niemand ausgeschieden.', some: 'Diese Nacht ist ausgeschieden:', continue: 'Weiter' },
@@ -51,14 +51,21 @@ export const roleNames: Record<RoleId, string> = {
 export const roleText: Record<RoleId, string> = {
   villager: 'Du hast keine besondere Fähigkeit. Beobachte, sprich und vertraue mit Bedacht.',
   wolf: 'Du gehörst zum Rudel und kennst die anderen. Gemeinsam bestimmt ihr in der Nacht ein Ziel.',
-  scout: 'Du darfst nachts begrenzt prüfen, zu welcher Seite eine Person gehört.',
+  scout: 'Du kannst nachts die Zugehörigkeit einer Person prüfen.',
   tracker: 'Du wählst nachts eine kleine Gruppe und erfährst nur, ob sich dort mindestens ein Rudelmitglied befindet.',
-  alchemist: 'Du besitzt zwei Tränke, jeden nur einmal: einen zum Schutz vor dem nächtlichen Angriff und einen für eine offensive Aktion.',
-  guardian: 'Du schützt nachts eine Person. Dieselbe Person nicht zwei Nächte in Folge.',
+  alchemist: 'Du besitzt Tränke mit begrenzter Wirkung. Was du hast und wie oft, siehst du nachts in deinem privaten Bereich.',
+  guardian: 'Du kannst nachts eine Person vor dem Angriff des Rudels schützen.',
   borderwalker: 'Du entscheidest dich geheim, ob du zum Dorf oder zum Rudel gehörst – vor der ersten Nacht.',
-  hunter: 'Scheidest du aus, bekommst du einen letzten Schuss auf eine Person deiner Wahl.',
-  shadowwolf: 'Du gehörst zum Rudel. Einmal kannst du eine Informationswirkung des Dorfes in einer Nacht stören.',
+  hunter: 'Scheidest du aus, hast du noch eine letzte Aktion.',
+  shadowwolf: 'Du gehörst zum Rudel und kennst die anderen. Du kannst Informationswirkungen des Dorfes stören.',
 };
 
 export const impulseText = (key: string) => IMPULSES[key] ?? '';
 
+
+/** Anzeigenamen der Fähigkeiten (IDs stammen aus der Rollen-Konfiguration; unbekannte IDs fallen auf die Art zurück). */
+const abilityLabels: Record<string, string> = {
+  scout: 'Du kannst nachts die Zugehörigkeit einer Person prüfen.', track: 'Fährte lesen', protect: 'Schützen', potion_protect: 'Schutztrank', potion_strike: 'Offensiver Trank', veil: 'Schleier legen',
+};
+const kindLabels: Record<string, string> = { inspect: 'Prüfen', inspect_group: 'Gruppe prüfen', protect: 'Schützen', strike: 'Aktion', veil: 'Schleier legen' };
+export const abilityName = (id: string, kind: string) => abilityLabels[id] ?? kindLabels[kind] ?? id;

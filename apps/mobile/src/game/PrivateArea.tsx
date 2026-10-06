@@ -1,10 +1,10 @@
-import type { ActionSpec, PrivateView, PublicView } from '@dorf/engine';
+import type { AbilitySpec, PrivateView, PublicView } from '@dorf/engine';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useRoom } from '../lib/room';
 import { usePrivate } from '../lib/private';
 import { Button, Card, Text } from '../ui/primitives';
-import { roleNames, roleText, t } from '../ui/strings';
+import { abilityName, roleNames, roleText, t } from '../ui/strings';
 import { colors, space } from '../ui/theme';
 import { PinGate } from './PinGate';
 import { TargetList } from './parts';
@@ -98,68 +98,59 @@ function PackTarget({ pub, data }: { pub: PublicView; data: PrivateView }) {
 
 function NightAction({ pub, data }: { pub: PublicView; data: PrivateView }) {
   if (pub.phase !== 'night' || !data.alive) return null;
-  const spec = data.nightAction;
   return (
-    <Card style={{ gap: space.md }}>
-      <Text v="label">{t.private.action}</Text>
-      {spec ? <ActionForm pub={pub} spec={spec} chosen={data.currentNightChoice} /> : <Text v="small">{t.private.nothing}</Text>}
-    </Card>
+    <View style={{ gap: space.lg }}>
+      {data.abilities.length === 0 ? (
+        <Card style={{ gap: space.md }}>
+          <Text v="label">{t.private.action}</Text>
+          <Text v="small">{t.private.nothing}</Text>
+        </Card>
+      ) : (
+        data.abilities.map((spec) => (
+          <Card key={spec.id} style={{ gap: space.md }}>
+            <Text v="label">{abilityName(spec.id, spec.kind)}</Text>
+            <AbilityForm pub={pub} spec={spec} />
+          </Card>
+        ))
+      )}
+    </View>
   );
 }
 
-function ActionForm({ pub, spec, chosen }: { pub: PublicView; spec: ActionSpec; chosen: PrivateView['currentNightChoice'] }) {
+/** Eine Fähigkeit. Art und Parameter kommen aus der Rollen-Konfiguration, nicht aus der UI. */
+function AbilityForm({ pub, spec }: { pub: PublicView; spec: AbilitySpec }) {
   const { act, busy } = useAct();
-  const [single, setSingle] = useState<string | null>(chosen && 'target' in chosen ? (chosen.target ?? null) : null);
-  const [group, setGroup] = useState<string[]>(chosen?.kind === 'track' ? chosen.targets : []);
-  const [protect, setProtect] = useState<string | null>(chosen?.kind === 'alchemist' ? (chosen.protect ?? null) : null);
-  const [strike, setStrike] = useState<string | null>(chosen?.kind === 'alchemist' ? (chosen.strike ?? null) : null);
-  const [veil, setVeil] = useState(chosen?.kind === 'veil');
+  const [single, setSingle] = useState<string | null>(spec.choice?.target ?? null);
+  const [group, setGroup] = useState<string[]>(spec.choice?.targets ?? []);
+  const [done, setDone] = useState(spec.kind === 'veil' && !!spec.choice);
+  const send = (extra: { target?: string; targets?: string[] }) => act({ type: 'night_action', ability: spec.id, ...extra });
 
-  switch (spec.kind) {
-    case 'scout':
-      return (
-        <>
-          <Text v="small">{t.private.pickTarget}</Text>
-          <TargetList pub={pub} options={spec.targets} selected={single} onSelect={setSingle} />
-          <Button label={t.private.send} disabled={!single} busy={busy} onPress={() => single && void act({ type: 'night_action', action: { kind: 'scout', target: single } })} />
-        </>
-      );
-    case 'protect':
-      return (
-        <>
-          <Text v="small">{t.private.pickTarget}</Text>
-          <TargetList pub={pub} options={spec.targets} exclude={spec.forbidden ? [spec.forbidden] : []} selected={single} onSelect={setSingle} />
-          <Button label={t.private.send} disabled={!single} busy={busy} onPress={() => single && void act({ type: 'night_action', action: { kind: 'protect', target: single } })} />
-        </>
-      );
-    case 'track':
-      return (
-        <>
-          <Text v="small">{`${t.private.pickTarget} (${group.length}/${spec.groupSize})`}</Text>
-          <View style={{ gap: space.sm }}>
-            {spec.targets.map((id) => (
-              <Button key={id} variant={group.includes(id) ? 'primary' : 'secondary'} label={nameOf(pub, id)}
-                onPress={() => setGroup((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < spec.groupSize ? [...g, id] : g))} />
-            ))}
-          </View>
-          <Button label={t.private.send} disabled={group.length !== spec.groupSize} busy={busy} onPress={() => void act({ type: 'night_action', action: { kind: 'track', targets: group } })} />
-        </>
-      );
-    case 'alchemist':
-      return (
-        <>
-          {spec.protectLeft > 0 && (<><Text v="small">Schutztrank</Text><TargetList pub={pub} options={spec.targets} selected={protect} onSelect={setProtect} /></>)}
-          {spec.strikeLeft > 0 && (<><Text v="small">Offensiver Trank</Text><TargetList pub={pub} options={spec.targets} selected={strike} onSelect={setStrike} /></>)}
-          <Button label={t.private.send} disabled={!protect && !strike} busy={busy}
-            onPress={() => void act({ type: 'night_action', action: { kind: 'alchemist', protect: protect ?? undefined, strike: strike ?? undefined } })} />
-        </>
-      );
-    case 'veil':
-      return (
-        <Button label={veil ? t.private.chosen : 'Schleier legen'} variant={veil ? 'secondary' : 'primary'} busy={busy}
-          onPress={async () => { if (await act({ type: 'night_action', action: { kind: 'veil' } })) setVeil(true); }} />
-      );
+  if (spec.kind === 'veil') {
+    return <Button label={done ? t.private.chosen : abilityName(spec.id, spec.kind)} variant={done ? 'secondary' : 'primary'} busy={busy}
+      onPress={async () => { if (await send({})) setDone(true); }} />;
   }
+  if (spec.kind === 'inspect_group') {
+    const size = spec.groupSize ?? 3;
+    return (
+      <>
+        <Text v="small">{`${t.private.pickTarget} (${group.length}/${size})`}</Text>
+        <View style={{ gap: space.sm }}>
+          {spec.targets.map((id) => (
+            <Button key={id} variant={group.includes(id) ? 'primary' : 'secondary'} label={nameOf(pub, id)}
+              onPress={() => setGroup((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < size ? [...g, id] : g))} />
+          ))}
+        </View>
+        <Button label={t.private.send} disabled={group.length !== size} busy={busy} onPress={() => void send({ targets: group })} />
+      </>
+    );
+  }
+  return (
+    <>
+      <Text v="small">{t.private.pickTarget}</Text>
+      <TargetList pub={pub} options={spec.targets} exclude={spec.forbidden ? [spec.forbidden] : []} selected={single} onSelect={setSingle} />
+      <Button label={t.private.send} disabled={!single} busy={busy} onPress={() => single && void send({ target: single })} />
+    </>
+  );
 }
 
 function Notes({ pub, data }: { pub: PublicView; data: PrivateView }) {
@@ -171,9 +162,9 @@ function Notes({ pub, data }: { pub: PublicView; data: PrivateView }) {
       {items.map((n) => {
         const d = n.data as Record<string, unknown>;
         let line = '';
-        if (n.kind === 'scout_result') {
+        if (n.kind === 'inspect_result') {
           line = d.unclear ? `${nameOf(pub, String(d.target))}: Das Ergebnis bleibt unklar.` : `${nameOf(pub, String(d.target))} gehört zum ${d.faction === 'pack' ? 'Rudel' : 'Dorf'}.`;
-        } else if (n.kind === 'track_result') {
+        } else if (n.kind === 'group_result') {
           const names = (d.targets as string[]).map((id) => nameOf(pub, id)).join(', ');
           line = d.unclear ? `${names}: Das Ergebnis bleibt unklar.` : `${names}: ${d.packPresent ? 'Mindestens ein Rudelmitglied ist dabei.' : 'Hier ist kein Rudelmitglied.'}`;
         } else if (n.kind === 'role_gained') {

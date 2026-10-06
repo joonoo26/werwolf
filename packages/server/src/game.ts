@@ -154,7 +154,7 @@ export function neutralPush(prev: PublicView | null, next: PublicView): { title:
     case 'morning':
       return { title, body: 'Im Dorf hat sich etwas verändert.' };
     case 'council':
-      return next.council?.step === 'nomination' ? { title, body: 'Das Dorf wird zusammengerufen.' } : null;
+      return next.council?.step === 'voting' ? { title, body: 'Das Dorf wird zusammengerufen.' } : null;
     case 'ended':
       return { title, body: 'Das Spiel ist zu Ende.' };
     default:

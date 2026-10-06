@@ -142,29 +142,6 @@ export function CouncilStage({ pub }: Props) {
           <Text v="display" accessibilityRole="header">{t.phase.council}</Text>
         </Center>
 
-        {c.step === 'nomination' && (
-          <>
-            <Text v="title" style={{ textAlign: 'center' }}>{t.council.nomination}</Text>
-            <Text v="small" style={{ textAlign: 'center' }}>{t.council.nominationHint}</Text>
-            {c.progress && <Text v="small" style={{ textAlign: 'center' }}>{t.council.waitingVotes(c.progress.cast, c.progress.total)}</Text>}
-            {alive && (
-              <>
-                <TargetList pub={pub} options={living} exclude={[me?.id ?? '']} selected={pick} onSelect={setPick} />
-                <Button label={t.council.nominate} disabled={!pick} busy={busy} onPress={async () => { if (pick && (await act({ type: 'nominate', target: pick }))) setLocked(true); }} />
-                {locked && <Text v="small" style={{ textAlign: 'center' }}>{t.council.locked}</Text>}
-              </>
-            )}
-          </>
-        )}
-
-        {c.step === 'defense' && (
-          <>
-            <Text v="title" style={{ textAlign: 'center' }}>{t.council.defense}</Text>
-            <Text v="small" style={{ textAlign: 'center' }}>{t.council.defenseHint}</Text>
-            <PlayersGrid pub={pub} selectable={c.candidates} selected={null} columns={3} exclude={pub.players.filter((p) => !c.candidates.includes(p.id)).map((p) => p.id)} />
-          </>
-        )}
-
         {c.step === 'voting' && (
           <>
             <Text v="title" style={{ textAlign: 'center' }}>{t.council.voting}</Text>

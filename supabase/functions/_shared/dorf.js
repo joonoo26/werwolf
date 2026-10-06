@@ -7,6 +7,9 @@ var VersionConflictError = class extends Error {
   }
 };
 
+// packages/engine/src/types.ts
+var UNLIMITED = 1e6;
+
 // packages/engine/src/rng.ts
 function hashString(str) {
   let h = 1779033703 ^ str.length;
@@ -91,45 +94,99 @@ var Rng = class {
 };
 
 // packages/engine/src/rules.ts
+var LATE = ["start", "quest_reward", "after_first_council", "day_start"];
+function role(def) {
+  return {
+    special: true,
+    enabled: true,
+    weight: 1,
+    minPlayers: 6,
+    maxPlayers: null,
+    unlock: { triggers: LATE, earliestDay: 1, latestDay: null },
+    recipient: def.faction === "pack" ? "wolf" : "villager",
+    startChoice: false,
+    abilities: [],
+    ...def
+  };
+}
+var ab = (a) => a;
 var DEFAULT_RULES = {
   minPlayers: 6,
   maxPlayers: 14,
-  wolfDivisor: 3.5,
-  trackGroupSize: 3,
-  scoutUses: 2,
-  trackerUses: 3,
-  roleMinPlayers: {
-    villager: 1,
-    wolf: 1,
-    scout: 6,
-    tracker: 6,
-    guardian: 7,
-    alchemist: 8,
-    borderwalker: 8,
-    hunter: 8,
-    shadowwolf: 9
+  wolvesByPlayers: { 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  roles: {
+    villager: role({ id: "villager", faction: "village", special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
+    wolf: role({ id: "wolf", faction: "pack", special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
+    scout: role({
+      id: "scout",
+      faction: "village",
+      weight: 1,
+      minPlayers: 6,
+      abilities: [ab({ id: "scout", kind: "inspect", uses: 2 })]
+    }),
+    tracker: role({
+      id: "tracker",
+      faction: "village",
+      weight: 2,
+      minPlayers: 6,
+      abilities: [ab({ id: "track", kind: "inspect_group", uses: 3, groupSize: 3 })]
+    }),
+    guardian: role({
+      id: "guardian",
+      faction: "village",
+      weight: 3,
+      minPlayers: 7,
+      abilities: [ab({ id: "protect", kind: "protect", uses: null, noRepeatTarget: true, allowSelf: true })]
+    }),
+    alchemist: role({
+      id: "alchemist",
+      faction: "village",
+      weight: 2,
+      minPlayers: 8,
+      abilities: [
+        ab({ id: "potion_protect", kind: "protect", uses: 1, allowSelf: true }),
+        ab({ id: "potion_strike", kind: "strike", uses: 1 })
+      ]
+    }),
+    borderwalker: role({
+      id: "borderwalker",
+      faction: "village",
+      weight: 1,
+      minPlayers: 8,
+      startChoice: true,
+      unlock: { triggers: ["start"], earliestDay: 1, latestDay: 1 }
+    }),
+    hunter: role({
+      id: "hunter",
+      faction: "village",
+      weight: 2,
+      minPlayers: 8,
+      abilities: [ab({ id: "last_shot", kind: "last_shot", uses: 1 })]
+    }),
+    shadowwolf: role({
+      id: "shadowwolf",
+      faction: "pack",
+      weight: 1,
+      minPlayers: 9,
+      abilities: [ab({ id: "veil", kind: "veil", uses: 1 })]
+    })
   },
-  roleWeights: {
-    villager: 0,
-    wolf: 0,
-    scout: 1,
-    tracker: 2,
-    guardian: 3,
-    alchemist: 2,
-    borderwalker: 1,
-    hunter: 2,
-    shadowwolf: 1
+  startSpecials: {
+    small: [{ count: 0, weight: 50 }, { count: 1, weight: 50 }],
+    medium: [{ count: 0, weight: 25 }, { count: 1, weight: 45 }, { count: 2, weight: 30 }],
+    large: [{ count: 1, weight: 50 }, { count: 2, weight: 50 }]
   },
   maxLaterSpecials: { small: 1, medium: 2, large: 3 },
-  infoBudget: { small: 2, medium: 2, large: 3 },
+  comboLimits: [{ roles: ["scout", "tracker"], max: { small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
-  laterRoleChanceDayStart: 0.35,
-  laterRoleChanceAfterFirstCouncil: 0.5,
+  moments: {
+    quest_reward: { momentChance: 1, grantChance: 1 },
+    after_first_council: { momentChance: 0.5, grantChance: 0.6 },
+    day_start: { momentChance: 0.35, grantChance: 0.6 }
+  },
   durations: {
     speakerElectionMs: 6e4,
-    nominationMs: 9e4,
-    defenseMs: 12e4,
-    votingMs: 12e4,
+    votingMs: 18e4,
     countdownMs: 4500,
     pointingMs: 8e3,
     tiebreakMs: 6e4,
@@ -142,7 +199,7 @@ var DEFAULT_RULES = {
   },
   evening: {
     minDayMs: 10 * 6e4,
-    councilBudgetMs: 10 * 6e4,
+    councilBudgetMs: 8 * 6e4,
     questSpacingMs: 25 * 6e4,
     maxQuestsPerDay: 3
   }
@@ -154,7 +211,7 @@ function mergeRules(overrides) {
 }
 function deepMerge(target, src) {
   for (const [k, v] of Object.entries(src)) {
-    if (v && typeof v === "object" && !Array.isArray(v) && typeof target[k] === "object") {
+    if (v && typeof v === "object" && !Array.isArray(v) && typeof target[k] === "object" && !Array.isArray(target[k])) {
       deepMerge(target[k], v);
     } else if (v !== void 0) {
       target[k] = v;
@@ -168,136 +225,80 @@ function sizeBand(playerCount) {
   return "large";
 }
 function wolfCount(playerCount, rules) {
-  return Math.max(2, Math.round(playerCount / rules.wolfDivisor));
+  return rules.wolvesByPlayers[playerCount] ?? Math.max(2, Math.round(playerCount / 3.5));
 }
-function startSpecialDistribution(playerCount) {
-  switch (sizeBand(playerCount)) {
-    case "small":
-      return [
-        { count: 0, weight: 50 },
-        { count: 1, weight: 50 }
-      ];
-    case "medium":
-      return [
-        { count: 0, weight: 25 },
-        { count: 1, weight: 45 },
-        { count: 2, weight: 30 }
-      ];
-    case "large":
-      return [
-        { count: 1, weight: 50 },
-        { count: 2, weight: 50 }
-      ];
-  }
-}
-var ROLES = {
-  villager: { id: "villager", faction: "village", infoWeight: 0, startOnly: false, special: false },
-  wolf: { id: "wolf", faction: "pack", infoWeight: 0, startOnly: false, special: false },
-  scout: { id: "scout", faction: "village", infoWeight: 2, startOnly: false, special: true },
-  tracker: { id: "tracker", faction: "village", infoWeight: 1, startOnly: false, special: true },
-  alchemist: { id: "alchemist", faction: "village", infoWeight: 0, startOnly: false, special: true },
-  guardian: { id: "guardian", faction: "village", infoWeight: 0, startOnly: false, special: true },
-  borderwalker: { id: "borderwalker", faction: "village", infoWeight: 0, startOnly: true, special: true },
-  hunter: { id: "hunter", faction: "village", infoWeight: 0, startOnly: false, special: true },
-  shadowwolf: { id: "shadowwolf", faction: "pack", infoWeight: 0, startOnly: false, special: true }
-};
-var SPECIAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].special);
+var ROLE_IDS = ["villager", "wolf", "scout", "tracker", "alchemist", "guardian", "borderwalker", "hunter", "shadowwolf"];
+var SPECIAL_ROLE_IDS = ROLE_IDS.filter((r) => DEFAULT_RULES.roles[r].special);
 
 // packages/engine/src/director.ts
-function living(state) {
-  return Object.values(state.players).filter((p) => p.alive);
+var living = (s) => Object.values(s.players).filter((p) => p.alive);
+function specialsGiven(s) {
+  return Object.values(s.players).filter((p) => s.rules.roles[p.role].special).length;
 }
-function roleTaken(state, role) {
-  return Object.values(state.players).some((p) => p.role === role);
+function roleTaken(s, role2) {
+  return Object.values(s.players).some((p) => p.role === role2);
 }
-function activeInfoWeight(state, rules) {
-  const used = living(state).reduce((sum, p) => sum + ROLES[p.role].infoWeight, 0);
-  return { used, budget: rules.infoBudget[sizeBand(Object.keys(state.players).length)] };
-}
-function specialsGiven(state) {
-  return Object.values(state.players).filter((p) => ROLES[p.role].special).length;
-}
-function isRoleEligible(role, ctx, state, rules) {
-  const meta = ROLES[role];
-  if (!meta.special) return false;
-  if (ctx.playerCount < rules.roleMinPlayers[role]) return false;
-  if (!ctx.isStart && meta.startOnly) return false;
-  if (ctx.chosen?.includes(role)) return false;
-  if (state && roleTaken(state, role)) return false;
-  if (!ctx.isStart && ctx.aliveCount <= rules.finaleAlive) return false;
-  if (meta.infoWeight > 0) {
-    const existing = state ? activeInfoWeight(state, rules).used : 0;
-    const chosen = (ctx.chosen ?? []).reduce((s, r) => s + ROLES[r].infoWeight, 0);
-    const budget = rules.infoBudget[sizeBand(ctx.playerCount)];
-    if (existing + chosen + meta.infoWeight > budget) return false;
-  }
-  if (!ctx.isStart) {
-    const others = ctx.aliveCount - ctx.packAlive;
-    const balance = others > 0 ? ctx.packAlive / others : 1;
-    if (meta.faction === "pack" && balance >= 0.6) return false;
-    if (meta.faction === "village" && balance <= 0.25) return false;
-    if (ctx.packAlive >= others) return false;
+function isRoleAllowed(def, ctx, rules) {
+  if (!def.special || !def.enabled || def.weight <= 0) return false;
+  if (ctx.assigned.includes(def.id)) return false;
+  if (ctx.playerCount < def.minPlayers) return false;
+  if (def.maxPlayers !== null && ctx.playerCount > def.maxPlayers) return false;
+  if (!def.unlock.triggers.includes(ctx.trigger)) return false;
+  if (ctx.day < def.unlock.earliestDay) return false;
+  if (def.unlock.latestDay !== null && ctx.day > def.unlock.latestDay) return false;
+  if (ctx.trigger !== "start" && rules.finaleAlive > 0 && ctx.aliveCount <= rules.finaleAlive) return false;
+  const band = sizeBand(ctx.playerCount);
+  for (const combo of rules.comboLimits) {
+    if (!combo.roles.includes(def.id)) continue;
+    const have = ctx.assigned.filter((r) => combo.roles.includes(r)).length;
+    if (have + 1 > combo.max[band]) return false;
   }
   return true;
 }
-function recipientsFor(state, role) {
-  const wantRole = ROLES[role].faction === "pack" ? "wolf" : "villager";
-  return living(state).filter((p) => p.role === wantRole).map((p) => p.id);
+function recipients(s, def) {
+  const want = def.recipient === "wolf" ? "wolf" : "villager";
+  return living(s).filter((p) => p.role === want).map((p) => p.id);
 }
-function maybeSpawnRole(state, trigger, rng) {
-  const { rules } = state;
-  const playerCount = Object.keys(state.players).length;
+function pickLateAssignment(s, trigger, rng) {
+  const { rules } = s;
+  const playerCount = Object.keys(s.players).length;
   const band = sizeBand(playerCount);
-  const laterGiven = specialsGiven(state) - state.startSpecials;
-  if (laterGiven >= rules.maxLaterSpecials[band]) return null;
-  if (trigger === "day_start" && !rng.chance(rules.laterRoleChanceDayStart)) return null;
-  if (trigger === "after_first_council" && !rng.chance(rules.laterRoleChanceAfterFirstCouncil)) return null;
-  const alive = living(state);
-  const packAlive = alive.filter((p) => p.faction === "pack").length;
-  const ctx = { isStart: false, playerCount, aliveCount: alive.length, packAlive };
-  const candidates = SPECIAL_ROLES.filter(
-    (r) => isRoleEligible(r, ctx, state, rules) && recipientsFor(state, r).length > 0
+  if (specialsGiven(s) - s.startSpecialCount >= rules.maxLaterSpecials[band]) return null;
+  const assigned = Object.values(s.players).map((p) => p.role);
+  const ctx = { trigger, day: s.day, playerCount, assigned, aliveCount: living(s).length };
+  const defs = Object.values(rules.roles).filter(
+    (d) => isRoleAllowed(d, ctx, rules) && !roleTaken(s, d.id) && recipients(s, d).length > 0
   );
-  const role = rng.weighted(candidates, (r) => rules.roleWeights[r]);
-  if (!role) return null;
-  const recipient = rng.pick(recipientsFor(state, role));
-  return { playerId: recipient, role };
+  const def = rng.weighted(defs, (d) => d.weight);
+  if (!def) return null;
+  return { playerId: rng.pick(recipients(s, def)), role: def.id };
 }
 function assignStartRoles(playerIds, rules, rng) {
   const n = playerIds.length;
   const order = rng.shuffle(playerIds);
   const wolves = wolfCount(n, rules);
-  const dist = startSpecialDistribution(n);
+  const dist = rules.startSpecials[sizeBand(n)];
   const picked = rng.weighted(dist, (d) => d.weight);
   const chosen = [];
-  let shadowWolf = false;
-  for (let i = 0; i < picked.count; i++) {
-    const ctx = {
-      isStart: true,
-      chosen,
-      playerCount: n,
-      aliveCount: n,
-      packAlive: wolves
-    };
-    const options = SPECIAL_ROLES.filter((r) => isRoleEligible(r, ctx, null, rules));
-    const role = rng.weighted(options, (r) => rules.roleWeights[r]);
-    if (!role) break;
-    chosen.push(role);
-    if (role === "shadowwolf") shadowWolf = true;
+  for (let i = 0; i < (picked?.count ?? 0); i++) {
+    const options = Object.values(rules.roles).filter(
+      (d) => isRoleAllowed(d, { trigger: "start", day: 1, playerCount: n, assigned: chosen, aliveCount: n }, rules)
+    );
+    const def = rng.weighted(options, (d) => d.weight);
+    if (!def) break;
+    chosen.push(def.id);
   }
   const assignments = [];
   let cursor = 0;
+  const packRoles = chosen.filter((r) => rules.roles[r].faction === "pack");
   for (let i = 0; i < wolves; i++) {
-    const id = order[cursor++];
-    assignments.push({ playerId: id, role: i === 0 && shadowWolf ? "shadowwolf" : "wolf" });
+    assignments.push({ playerId: order[cursor++], role: packRoles[i] ?? "wolf" });
   }
-  for (const role of chosen) {
-    if (role === "shadowwolf") continue;
-    assignments.push({ playerId: order[cursor++], role });
+  for (const r of chosen.filter((x) => rules.roles[x].faction !== "pack")) {
+    assignments.push({ playerId: order[cursor++], role: r });
   }
   while (cursor < order.length) assignments.push({ playerId: order[cursor++], role: "villager" });
-  const startSpecials = chosen.length;
-  return { assignments, startSpecials };
+  return { assignments, startSpecialCount: chosen.length };
 }
 
 // packages/engine/src/content.ts
@@ -308,8 +309,7 @@ var QUESTS = [
     title: "Wer von euch \u2026",
     goal: "Findet heraus, wie gut ihr einander einsch\xE4tzt.",
     task: "Jemand liest \u201EWer von euch w\xFCrde bei Stromausfall als Erstes die Kerzen finden?\u201C vor. Alle zeigen gleichzeitig auf eine Person. Danach darf die gezeigte Person erkl\xE4ren, ob es stimmt.",
-    finish: "Fertig, sobald alle ihre Einsch\xE4tzung erkl\xE4rt haben.",
-    reward: "none"
+    finish: "Fertig, sobald alle ihre Einsch\xE4tzung erkl\xE4rt haben."
   },
   {
     id: "q-wer-von-euch-2",
@@ -317,8 +317,7 @@ var QUESTS = [
     title: "Der ruhigste Pol",
     goal: "Tippt, wer in diesem Raum am schwersten aus der Ruhe zu bringen ist.",
     task: "Jeder schreibt einen Namen auf einen Zettel oder merkt ihn sich. Dann nennt reihum, wen ihr gew\xE4hlt habt \u2013 und warum.",
-    finish: "Fertig, wenn jede Begr\xFCndung geh\xF6rt wurde.",
-    reward: "hint"
+    finish: "Fertig, wenn jede Begr\xFCndung geh\xF6rt wurde."
   },
   {
     id: "q-tabu-1",
@@ -326,8 +325,7 @@ var QUESTS = [
     title: "Ohne das Wort",
     goal: "Erkl\xE4rt einen Begriff, ohne ihn auszusprechen.",
     task: "Reihum zieht jemand im Kopf einen Alltagsgegenstand und erkl\xE4rt ihn der Gruppe, ohne dessen Namen oder Verwandte davon zu nennen. Wer das Wort r\xE4t, erkl\xE4rt als N\xE4chstes.",
-    finish: "Fertig nach drei erratenen Begriffen oder Ablauf der Zeit.",
-    reward: "none"
+    finish: "Fertig nach drei erratenen Begriffen oder Ablauf der Zeit."
   },
   {
     id: "q-tabu-2",
@@ -336,7 +334,6 @@ var QUESTS = [
     goal: "Haltet ein kurzes Gespr\xE4ch, ohne eine bestimmte Silbe zu benutzen.",
     task: "Das Dorf einigt sich auf ein h\xE4ufiges Wort (\u201Eja\u201C, \u201Enein\u201C oder \u201Eich\u201C). Zwei Minuten lang darf es niemand sagen. Wer es doch tut, sagt danach ein Geheimnis, das keines ist.",
     finish: "Fertig nach zwei Minuten.",
-    reward: "none",
     durationMs: 4 * 6e4
   },
   {
@@ -346,7 +343,7 @@ var QUESTS = [
     goal: "Findet ohne Absprache dieselbe Antwort.",
     task: "Alle denken sich gleichzeitig eine Farbe, eine Zahl von 1 bis 10 und ein Tier aus. Auf \u201EJetzt\u201C sagen alle laut ihre Antworten. Wie viele \xDCbereinstimmungen gibt es?",
     finish: "Fertig nach drei Runden. Ihr d\xFCrft nach jeder Runde nur schweigen und nicken.",
-    reward: "role"
+    reward: { kind: "role" }
   },
   {
     id: "q-koordination-2",
@@ -354,8 +351,7 @@ var QUESTS = [
     title: "Im Takt",
     goal: "Bringt das Dorf in einen gemeinsamen Rhythmus.",
     task: "Ohne zu sprechen, versucht ihr, nacheinander von 1 bis zur Zahl der Mitspielenden zu z\xE4hlen. Wenn zwei gleichzeitig sprechen, beginnt ihr von vorn.",
-    finish: "Fertig, sobald ihr einmal ohne \xDCberschneidung durchkommt \u2013 oder die Zeit abl\xE4uft.",
-    reward: "none"
+    finish: "Fertig, sobald ihr einmal ohne \xDCberschneidung durchkommt \u2013 oder die Zeit abl\xE4uft."
   },
   {
     id: "q-wissen-1",
@@ -364,7 +360,7 @@ var QUESTS = [
     goal: "Findet heraus, was das Dorf gemeinsam wei\xDF.",
     task: "Sammelt zusammen zehn Dinge, die garantiert jede Person in diesem Raum kennt, aber keine Fremde kennen w\xFCrde.",
     finish: "Fertig bei zehn Dingen, die alle best\xE4tigen.",
-    reward: "hint"
+    reward: { kind: "hint" }
   },
   {
     id: "q-wissen-2",
@@ -372,8 +368,7 @@ var QUESTS = [
     title: "Orte und Wege",
     goal: "Beschreibt einen Ort, den alle schon gesehen haben.",
     task: "Reihum nennt jemand einen Satz \xFCber einen Ort, den alle kennen m\xFCssten. Der Ort darf nicht genannt werden. Sobald alle ihn erraten, beginnt ein neuer.",
-    finish: "Fertig nach zwei Orten.",
-    reward: "none"
+    finish: "Fertig nach zwei Orten."
   },
   {
     id: "q-sortieren-1",
@@ -381,8 +376,7 @@ var QUESTS = [
     title: "Aufgereiht",
     goal: "Stellt euch ohne zu sprechen in der richtigen Reihenfolge auf.",
     task: "Ordnet euch nach Geburtstag im Jahr, ohne zu sprechen. Zeigt, was ihr k\xF6nnt: Finger, Gesten, Blicke. Dann pr\xFCft laut.",
-    finish: "Fertig, wenn alle die Reihenfolge laut best\xE4tigt haben.",
-    reward: "none"
+    finish: "Fertig, wenn alle die Reihenfolge laut best\xE4tigt haben."
   },
   {
     id: "q-sortieren-2",
@@ -390,8 +384,7 @@ var QUESTS = [
     title: "Alles in Ordnung",
     goal: "Bringt Begriffe gemeinsam in eine Rangfolge.",
     task: "Einigt euch auf eine Rangfolge von f\xFCnf Dingen vom Allt\xE4glichsten zum Seltensten (z. B. Regenschirm, Fahrradschl\xFCssel, Briefmarke, Taschenlampe, Gummiente). Jeder darf einmal umstellen.",
-    finish: "Fertig, wenn ihr eine Reihenfolge habt, mit der niemand laut widerspricht.",
-    reward: "none"
+    finish: "Fertig, wenn ihr eine Reihenfolge habt, mit der niemand laut widerspricht."
   },
   {
     id: "q-gedaechtnis-1",
@@ -399,8 +392,7 @@ var QUESTS = [
     title: "Wer sa\xDF wo?",
     goal: "Pr\xFCft, wie gut ihr euch den Abend gemerkt habt.",
     task: "Alle schlie\xDFen die Augen. Eine Person stellt drei Fragen zu dem, was heute im Raum zu sehen war (Kleidung, Gegenst\xE4nde, Sitzpl\xE4tze). Danach wird gemeinsam gepr\xFCft.",
-    finish: "Fertig nach drei Fragen.",
-    reward: "none"
+    finish: "Fertig nach drei Fragen."
   },
   {
     id: "q-gedaechtnis-2",
@@ -408,8 +400,7 @@ var QUESTS = [
     title: "Die lange Kette",
     goal: "Baut zusammen eine Merkkette auf.",
     task: "Reihum wiederholt jede Person die bisherige Kette (\u201EIch packe in meinen Korb \u2026\u201C) und f\xFCgt einen Gegenstand hinzu. Wer sich verhaspelt, beginnt die n\xE4chste Runde.",
-    finish: "Fertig nach zwei Runden oder wenn die Kette zehn Gegenst\xE4nde hat.",
-    reward: "role"
+    finish: "Fertig nach zwei Runden oder wenn die Kette zehn Gegenst\xE4nde hat."
   },
   {
     id: "q-geschick-1",
@@ -417,8 +408,7 @@ var QUESTS = [
     title: "Ruhige Hand",
     goal: "Haltet etwas stabil, w\xE4hrend die anderen reden.",
     task: "Alle stapeln mit dem, was zur Hand ist (Bierdeckel, M\xFCnzen, L\xF6ffel), einen m\xF6glichst hohen Turm, w\xE4hrend sie dabei \xFCber ihren Tag erz\xE4hlen. Wessen Turm f\xE4llt, erz\xE4hlt eine Gegenfrage.",
-    finish: "Fertig nach Ablauf der Zeit.",
-    reward: "none"
+    finish: "Fertig nach Ablauf der Zeit."
   },
   {
     id: "q-geschick-2",
@@ -426,8 +416,7 @@ var QUESTS = [
     title: "Die Kerze des Dorfes",
     goal: "Gebt etwas gemeinsam weiter, ohne dass es herunterf\xE4llt.",
     task: "Gebt einen L\xF6ffel mit einer M\xFCnze reihum, ohne dass die M\xFCnze f\xE4llt. W\xE4hrend der Weitergabe nennt jede Person eine Eigenschaft der n\xE4chsten.",
-    finish: "Fertig, wenn die M\xFCnze einmal im Kreis ist.",
-    reward: "hint"
+    finish: "Fertig, wenn die M\xFCnze einmal im Kreis ist."
   }
 ];
 var IMPULSES = {
@@ -498,22 +487,21 @@ function pushEvent(s, ctx, kind, players, data) {
 function addNote(s, id, day, kind, data) {
   (s.notes[id] ??= []).push({ id: s.nextNoteId++, day, kind, data });
 }
-function freshUses(role, s) {
-  return {
-    scout: role === "scout" ? s.rules.scoutUses : 0,
-    tracker: role === "tracker" ? s.rules.trackerUses : 0,
-    alchemistProtect: role === "alchemist" ? 1 : 0,
-    alchemistStrike: role === "alchemist" ? 1 : 0,
-    shadowVeil: role === "shadowwolf" ? 1 : 0
-  };
+function initialUses(role2, rules) {
+  const uses = {};
+  for (const a of rules.roles[role2].abilities) uses[a.id] = a.uses === null ? UNLIMITED : a.uses;
+  return uses;
 }
-function setRole(s, id, role, day) {
+var abilitiesOf = (s, p) => s.rules.roles[p.role].abilities;
+function setRole(s, id, role2, day) {
   const p = s.players[id];
-  p.role = role;
-  p.faction = ROLES[role].faction;
+  const def = s.rules.roles[role2];
+  p.role = role2;
+  p.faction = def.faction;
   p.roleSince = day;
-  p.uses = freshUses(role, s);
-  p.sidePending = role === "borderwalker";
+  p.uses = initialUses(role2, s.rules);
+  p.lastTarget = {};
+  p.sidePending = def.startChoice;
 }
 function setImpulse(s, ctx, kind) {
   let textKey;
@@ -529,12 +517,15 @@ function setImpulse(s, ctx, kind) {
   s.impulse = { id: (s.impulse?.id ?? 0) + 1, kind, textKey, at: ctx.now, showUntil: ctx.now + s.rules.durations.impulseMs };
   pushEvent(s, ctx, "impulse", void 0, { kind });
 }
-function applySpawn(s, ctx, trigger) {
-  const a = maybeSpawnRole(s, trigger, ctx.rng);
+function runMoment(s, ctx, trigger) {
+  const m = s.rules.moments[trigger];
+  if (!ctx.rng.chance(m.momentChance)) return;
+  setImpulse(s, ctx, "change");
+  if (!ctx.rng.chance(m.grantChance)) return;
+  const a = pickLateAssignment(s, trigger, ctx.rng);
   if (!a) return;
   setRole(s, a.playerId, a.role, s.day);
   addNote(s, a.playerId, s.day, "role_gained", { role: a.role });
-  setImpulse(s, ctx, "change");
 }
 function eliminate(s, ctx, id) {
   const p = s.players[id];
@@ -547,7 +538,7 @@ function eliminate(s, ctx, id) {
   delete s.packVotes[id];
   for (const [voter, target] of Object.entries(s.packVotes)) if (target === id) delete s.packVotes[voter];
   if (s.speakerId === id) s.speakerId = null;
-  if (p.role === "hunter") s.hunterShots[id] = null;
+  if (abilitiesOf(s, p).some((a) => a.kind === "last_shot" && (p.uses[a.id] ?? 0) > 0)) s.hunterShots[id] = null;
 }
 function createGame(input) {
   const rules = mergeRules(input.rules);
@@ -559,7 +550,7 @@ function createGame(input) {
   if (!input.roster.some((r) => r.id === input.hostId)) throw new Error("Host ist kein Spieler");
   const rng = new Rng(seedToState(input.seed));
   const ids = input.roster.map((r) => r.id);
-  const { assignments, startSpecials } = assignStartRoles(ids, rules, rng);
+  const { assignments, startSpecialCount } = assignStartRoles(ids, rules, rng);
   const seats = rng.shuffle(ids);
   const s = {
     schema: 1,
@@ -582,7 +573,7 @@ function createGame(input) {
     hunterShots: {},
     usedQuestIds: [],
     usedImpulseKeys: [],
-    startSpecials,
+    startSpecialCount,
     firstCouncilDone: false,
     impulse: null,
     events: [],
@@ -599,8 +590,8 @@ function createGame(input) {
       role: "villager",
       faction: "village",
       roleSince: 1,
-      uses: freshUses("villager", s),
-      lastProtected: null,
+      uses: initialUses("villager", rules),
+      lastTarget: {},
       sidePending: false,
       eliminatedDay: null
     };
@@ -631,7 +622,7 @@ function beginDayPhase(s, ctx) {
   s.readyCouncil = [];
   s.readyAdvance = [];
   s.majorityAt = null;
-  if (s.day >= 2) applySpawn(s, ctx, "day_start");
+  if (s.day >= 2) runMoment(s, ctx, "day_start");
   let councilBy = null;
   let nightAt = null;
   let questTimes;
@@ -695,22 +686,34 @@ function startQuest(s, ctx) {
   };
   pushEvent(s, ctx, "quest_started", void 0, { questId: def.id });
 }
+function applyQuestReward(s, ctx, reward) {
+  switch (reward.kind) {
+    case "hint":
+      setImpulse(s, ctx, "hint");
+      break;
+    case "role":
+      runMoment(s, ctx, "quest_reward");
+      break;
+    case "event":
+      pushEvent(s, ctx, "quest_event", void 0, { eventKey: reward.eventKey });
+      break;
+  }
+}
 function endQuest(s, ctx) {
   if (s.phase.kind !== "day" || !s.phase.quest) return;
-  const questId = s.phase.quest.id;
-  const def = QUESTS.find((q) => q.id === questId);
+  const quest = s.phase.quest;
+  const def = QUESTS.find((q) => q.id === quest.id);
+  const success = livingIds(s).every((id) => quest.doneBy.includes(id));
   s.phase.quest = null;
-  pushEvent(s, ctx, "quest_ended", void 0, { questId: def?.id });
-  if (def?.reward === "role") applySpawn(s, ctx, "quest_reward");
-  else if (def?.reward === "hint") setImpulse(s, ctx, "hint");
+  pushEvent(s, ctx, "quest_ended", void 0, { questId: quest.id, success });
+  if (success && def?.reward) applyQuestReward(s, ctx, def.reward);
 }
 function startCouncil(s, ctx) {
   const nightAt = s.phase.kind === "day" ? s.phase.nightAt : null;
   const council = {
-    step: "nomination",
-    endsAt: ctx.now + s.rules.durations.nominationMs,
-    nominations: {},
-    candidates: [],
+    step: "voting",
+    endsAt: ctx.now + s.rules.durations.votingMs,
+    candidates: livingIds(s),
     votes: {},
     revealAt: null,
     tally: null,
@@ -723,16 +726,6 @@ function startCouncil(s, ctx) {
   s.readyAdvance = [];
   s.majorityAt = null;
   pushEvent(s, ctx, "council_started");
-}
-function computeCandidates(s, c) {
-  const counts = {};
-  for (const [voter, target] of Object.entries(c.nominations)) {
-    if (isAlive(s, voter) && isAlive(s, target)) counts[target] = (counts[target] ?? 0) + 1;
-  }
-  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (ranked.length === 0) return livingIds(s);
-  const cut = ranked[Math.min(2, ranked.length - 1)][1];
-  return ranked.filter(([, n]) => n >= cut).map(([id]) => id);
 }
 function banish(s, ctx, id, byTiebreak) {
   if (s.phase.kind !== "council") return;
@@ -748,7 +741,7 @@ function tallyVotes(s, c) {
   const tally = {};
   for (const cand of c.candidates) tally[cand] = 0;
   for (const [voter, target] of Object.entries(c.votes)) {
-    if (isAlive(s, voter) && c.candidates.includes(target)) tally[target] = (tally[target] ?? 0) + 1;
+    if (isAlive(s, voter) && voter !== target && c.candidates.includes(target)) tally[target] = (tally[target] ?? 0) + 1;
   }
   return tally;
 }
@@ -759,26 +752,6 @@ function stepCouncil(s, ctx, force) {
   const d = s.rules.durations;
   const living2 = livingIds(s);
   switch (c.step) {
-    case "nomination": {
-      const all = living2.every((id) => c.nominations[id]);
-      if (!(all || now >= c.endsAt || force)) return false;
-      c.candidates = computeCandidates(s, c);
-      pushEvent(s, ctx, "candidates", c.candidates);
-      c.step = "defense";
-      c.endsAt = now + d.defenseMs;
-      return true;
-    }
-    case "defense": {
-      if (!(now >= c.endsAt || force)) return false;
-      if (c.candidates.length === 1) {
-        c.tally = { [c.candidates[0]]: 0 };
-        banish(s, ctx, c.candidates[0], false);
-        return true;
-      }
-      c.step = "voting";
-      c.endsAt = now + d.votingMs;
-      return true;
-    }
     case "voting": {
       const all = living2.every((id) => c.votes[id]);
       if (!(all || now >= c.endsAt || force)) return false;
@@ -792,9 +765,9 @@ function stepCouncil(s, ctx, force) {
       const tally = tallyVotes(s, c);
       c.tally = tally;
       const top = Math.max(0, ...Object.values(tally));
-      const leaders = c.candidates.filter((id) => tally[id] === top);
-      if (top === 0) {
-        banish(s, ctx, ctx.rng.pick(c.candidates), false);
+      const leaders = c.candidates.filter((id) => tally[id] === top && isAlive(s, id));
+      if (top === 0 || leaders.length === 0) {
+        banish(s, ctx, ctx.rng.pick(living2), false);
         return true;
       }
       if (leaders.length === 1) {
@@ -812,7 +785,7 @@ function stepCouncil(s, ctx, force) {
     }
     case "tiebreak": {
       if (!(now >= c.endsAt || force)) return false;
-      banish(s, ctx, ctx.rng.pick(c.tied ?? c.candidates), true);
+      banish(s, ctx, ctx.rng.pick(c.tied ?? living2), true);
       return true;
     }
     case "result": {
@@ -824,7 +797,10 @@ function stepCouncil(s, ctx, force) {
 }
 function applyHunterShots(s, ctx) {
   for (const [hunterId, target] of Object.entries(s.hunterShots)) {
-    if (target && isAlive(s, target)) {
+    const h = s.players[hunterId];
+    const ability = h ? abilitiesOf(s, h).find((a) => a.kind === "last_shot") : void 0;
+    if (h && ability && target && isAlive(s, target) && hasUses(h, ability)) {
+      consume(h, ability);
       eliminate(s, ctx, target);
       pushEvent(s, ctx, "last_shot", [hunterId, target]);
     }
@@ -844,7 +820,7 @@ function proceed(s, ctx, which) {
     const nightAt = s.phase.kind === "council" ? s.phase.nightAt : null;
     if (!s.firstCouncilDone) {
       s.firstCouncilDone = true;
-      applySpawn(s, ctx, "after_first_council");
+      runMoment(s, ctx, "after_first_council");
     }
     s.readyAdvance = [];
     s.majorityAt = null;
@@ -877,63 +853,55 @@ function resolvePackTarget(s, ctx) {
   const options = livingPlayers(s).filter((p) => p.faction !== "pack");
   return options.length ? ctx.rng.pick(options).id : null;
 }
+var hasUses = (p, a) => (p.uses[a.id] ?? 0) > 0;
+var consume = (p, a) => {
+  if (a.uses !== null) p.uses[a.id] = (p.uses[a.id] ?? 0) - 1;
+};
 function resolveNight(s, ctx) {
   const day = s.day;
-  const actions = s.nightActions;
   const target = resolvePackTarget(s, ctx);
+  const actors = livingPlayers(s);
+  const chosen = (p, a) => s.nightActions[p.id]?.[a.id];
+  const each = (kind, fn) => {
+    for (const p of actors) {
+      for (const a of abilitiesOf(s, p)) {
+        const c = chosen(p, a);
+        if (a.kind === kind && c && hasUses(p, a)) fn(p, a, c);
+      }
+    }
+  };
   let veiled = false;
-  for (const [id, a] of Object.entries(actions)) {
-    const p = s.players[id];
-    if (a.kind === "veil" && p?.alive && p.role === "shadowwolf" && p.uses.shadowVeil > 0) {
-      p.uses.shadowVeil -= 1;
-      veiled = true;
-    }
-  }
+  each("veil", (p, a) => {
+    consume(p, a);
+    veiled = true;
+  });
+  each("inspect", (p, a, c) => {
+    consume(p, a);
+    const t = c.target ? s.players[c.target] : void 0;
+    addNote(s, p.id, day, "inspect_result", veiled || !t ? { ability: a.id, target: c.target, unclear: true } : { ability: a.id, target: c.target, faction: t.faction });
+  });
+  each("inspect_group", (p, a, c) => {
+    consume(p, a);
+    const targets = c.targets ?? [];
+    const packPresent = targets.some((tid) => s.players[tid]?.faction === "pack");
+    addNote(s, p.id, day, "group_result", veiled ? { ability: a.id, targets, unclear: true } : { ability: a.id, targets, packPresent });
+  });
   const protectedIds = /* @__PURE__ */ new Set();
-  const strikeIds = [];
-  for (const [id, a] of Object.entries(actions)) {
-    const p = s.players[id];
-    if (!p || !p.alive) continue;
-    switch (a.kind) {
-      case "scout": {
-        if (p.role !== "scout" || p.uses.scout <= 0) break;
-        p.uses.scout -= 1;
-        const t = s.players[a.target];
-        addNote(s, id, day, "scout_result", veiled || !t ? { target: a.target, unclear: true } : { target: a.target, faction: t.faction });
-        break;
-      }
-      case "track": {
-        if (p.role !== "tracker" || p.uses.tracker <= 0) break;
-        p.uses.tracker -= 1;
-        const hasWolf = a.targets.some((tid) => s.players[tid]?.faction === "pack");
-        addNote(s, id, day, "track_result", veiled ? { targets: a.targets, unclear: true } : { targets: a.targets, packPresent: hasWolf });
-        break;
-      }
-      case "protect": {
-        if (p.role !== "guardian") break;
-        protectedIds.add(a.target);
-        p.lastProtected = a.target;
-        break;
-      }
-      case "alchemist": {
-        if (p.role !== "alchemist") break;
-        if (a.protect && p.uses.alchemistProtect > 0) {
-          p.uses.alchemistProtect -= 1;
-          protectedIds.add(a.protect);
-        }
-        if (a.strike && p.uses.alchemistStrike > 0) {
-          p.uses.alchemistStrike -= 1;
-          strikeIds.push(a.strike);
-        }
-        break;
-      }
-      default:
-        break;
+  each("protect", (p, a, c) => {
+    consume(p, a);
+    if (c.target) {
+      protectedIds.add(c.target);
+      p.lastTarget[a.id] = c.target;
     }
+  });
+  for (const p of actors) {
+    for (const a of abilitiesOf(s, p)) if (a.kind === "protect" && !chosen(p, a)) p.lastTarget[a.id] = null;
   }
-  for (const p of Object.values(s.players)) {
-    if (p.role === "guardian" && p.alive && actions[p.id]?.kind !== "protect") p.lastProtected = null;
-  }
+  const strikeIds = [];
+  each("strike", (p, a, c) => {
+    consume(p, a);
+    if (c.target) strikeIds.push(c.target);
+  });
   const deaths = [];
   if (target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
   for (const t of strikeIds) if (isAlive(s, t) && !deaths.includes(t)) deaths.push(t);
@@ -1050,55 +1018,40 @@ function requireLivingTarget(s, target, opts = {}) {
   if (opts.not === target) fail("invalid_target", "Dieses Ziel ist nicht erlaubt");
   return t;
 }
-function applyNightAction(s, actor, a) {
+function applyNightAction(s, actor, cmd) {
   if (s.phase.kind !== "night") fail("wrong_phase", "Nachtaktionen gibt es nur nachts");
+  const a = abilitiesOf(s, actor).find((x) => x.id === cmd.ability);
+  if (!a || a.kind === "last_shot") return fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
+  if (!hasUses(actor, a)) fail("no_uses_left", "Keine Nutzungen \xFCbrig");
+  let choice = {};
   switch (a.kind) {
-    case "scout": {
-      if (actor.role !== "scout") fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
-      if (actor.uses.scout <= 0) fail("no_uses_left", "Keine Nutzungen \xFCbrig");
-      requireLivingTarget(s, a.target, { not: actor.id });
-      break;
-    }
-    case "track": {
-      if (actor.role !== "tracker") fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
-      if (actor.uses.tracker <= 0) fail("no_uses_left", "Keine Nutzungen \xFCbrig");
-      const targets = [...new Set(a.targets)];
-      const others = livingPlayers(s).filter((p) => p.id !== actor.id).length;
-      const size = Math.min(s.rules.trackGroupSize, others);
-      if (targets.length !== size || targets.length !== a.targets.length) {
-        fail("invalid_target", `W\xE4hle genau ${size} verschiedene Personen`);
-      }
-      for (const t of targets) requireLivingTarget(s, t, { not: actor.id });
+    case "inspect":
+    case "strike": {
+      if (!cmd.target) return fail("invalid_target", "Ziel fehlt");
+      requireLivingTarget(s, cmd.target, { not: actor.id });
+      choice = { target: cmd.target };
       break;
     }
     case "protect": {
-      if (actor.role !== "guardian") fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
-      requireLivingTarget(s, a.target);
-      if (actor.lastProtected === a.target) fail("invalid_target", "Dieselbe Person nicht zwei N\xE4chte in Folge");
+      if (!cmd.target) return fail("invalid_target", "Ziel fehlt");
+      requireLivingTarget(s, cmd.target, a.allowSelf === false ? { not: actor.id } : {});
+      if (a.noRepeatTarget && actor.lastTarget[a.id] === cmd.target) fail("invalid_target", "Dieselbe Person nicht zwei N\xE4chte in Folge");
+      choice = { target: cmd.target };
       break;
     }
-    case "alchemist": {
-      if (actor.role !== "alchemist") fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
-      if (!a.protect && !a.strike) fail("invalid_command", "Keine Wirkung gew\xE4hlt");
-      if (a.protect) {
-        if (actor.uses.alchemistProtect <= 0) fail("no_uses_left", "Dieser Trank ist verbraucht");
-        requireLivingTarget(s, a.protect);
-      }
-      if (a.strike) {
-        if (actor.uses.alchemistStrike <= 0) fail("no_uses_left", "Dieser Trank ist verbraucht");
-        requireLivingTarget(s, a.strike, { not: actor.id });
-      }
+    case "inspect_group": {
+      const targets = cmd.targets ?? [];
+      const others = livingPlayers(s).filter((p) => p.id !== actor.id).length;
+      const size = Math.min(a.groupSize ?? 3, others);
+      if (new Set(targets).size !== targets.length || targets.length !== size) fail("invalid_target", `W\xE4hle genau ${size} verschiedene Personen`);
+      for (const t of targets) requireLivingTarget(s, t, { not: actor.id });
+      choice = { targets };
       break;
     }
-    case "veil": {
-      if (actor.role !== "shadowwolf") fail("not_allowed", "Diese Aktion steht dir nicht zur Verf\xFCgung");
-      if (actor.uses.shadowVeil <= 0) fail("no_uses_left", "Bereits benutzt");
+    case "veil":
       break;
-    }
-    default:
-      fail("invalid_command", "Unbekannte Aktion");
   }
-  s.nightActions[actor.id] = a;
+  (s.nightActions[actor.id] ??= {})[a.id] = choice;
 }
 function execute(s, actorId, cmd, ctx) {
   if (cmd.type === "tick") {
@@ -1160,13 +1113,6 @@ function execute(s, actorId, cmd, ctx) {
       ep.votes[actor.id] = cmd.target;
       return;
     }
-    case "nominate": {
-      const np = s.phase;
-      if (np.kind !== "council" || np.council.step !== "nomination") return fail("wrong_phase", "Jetzt wird nicht nominiert");
-      requireLivingTarget(s, cmd.target, { not: actor.id });
-      np.council.nominations[actor.id] = cmd.target;
-      return;
-    }
     case "vote": {
       const vp = s.phase;
       if (vp.kind !== "council" || vp.council.step !== "voting") return fail("wrong_phase", "Jetzt wird nicht abgestimmt");
@@ -1197,11 +1143,11 @@ function execute(s, actorId, cmd, ctx) {
       return;
     }
     case "night_action": {
-      applyNightAction(s, actor, cmd.action);
+      applyNightAction(s, actor, cmd);
       return;
     }
     case "choose_side": {
-      if (actor.role !== "borderwalker" || !actor.sidePending) fail("not_allowed", "Keine Wahl offen");
+      if (!actor.sidePending) fail("not_allowed", "Keine Wahl offen");
       if (s.phase.kind === "night" || s.phase.kind === "ended") fail("wrong_phase", "Zu sp\xE4t f\xFCr diese Wahl");
       actor.sidePending = false;
       actor.faction = cmd.side;
@@ -1278,12 +1224,12 @@ function publicView(s) {
       const c = p.council;
       nightAt = p.nightAt;
       phaseEndsAt = c.endsAt;
-      const cast = c.step === "nomination" ? Object.keys(c.nominations).filter((id) => s.players[id]?.alive).length : Object.keys(c.votes).filter((id) => s.players[id]?.alive).length;
+      const cast = Object.keys(c.votes).filter((id) => s.players[id]?.alive).length;
       council = {
         step: c.step,
         endsAt: c.endsAt,
         candidates: c.candidates,
-        progress: c.step === "nomination" || c.step === "voting" ? { cast, total: living2.length } : null,
+        progress: c.step === "voting" ? { cast, total: living2.length } : null,
         revealAt: c.revealAt,
         tally: c.step === "tiebreak" || c.step === "result" ? c.tally : null,
         tied: c.step === "tiebreak" ? c.tied : null,
@@ -1350,38 +1296,19 @@ function privateView(s, id) {
   const alive = livingPlayers(s);
   const others = alive.filter((p) => p.id !== id).map((p) => p.id);
   const isPack = me.alive && me.faction === "pack";
-  let nightAction = null;
+  const abilities = [];
   if (s.phase.kind === "night" && me.alive) {
-    switch (me.role) {
-      case "scout":
-        if (me.uses.scout > 0) nightAction = { kind: "scout", targets: others, usesLeft: me.uses.scout };
-        break;
-      case "tracker":
-        if (me.uses.tracker > 0)
-          nightAction = {
-            kind: "track",
-            targets: others,
-            groupSize: Math.min(s.rules.trackGroupSize, others.length),
-            usesLeft: me.uses.tracker
-          };
-        break;
-      case "guardian":
-        nightAction = { kind: "protect", targets: alive.map((p) => p.id), forbidden: me.lastProtected };
-        break;
-      case "alchemist":
-        if (me.uses.alchemistProtect > 0 || me.uses.alchemistStrike > 0)
-          nightAction = {
-            kind: "alchemist",
-            targets: alive.map((p) => p.id),
-            protectLeft: me.uses.alchemistProtect,
-            strikeLeft: me.uses.alchemistStrike
-          };
-        break;
-      case "shadowwolf":
-        if (me.uses.shadowVeil > 0) nightAction = { kind: "veil", usesLeft: me.uses.shadowVeil };
-        break;
-      default:
-        break;
+    for (const a of s.rules.roles[me.role].abilities) {
+      if (a.kind === "last_shot" || (me.uses[a.id] ?? 0) <= 0) continue;
+      abilities.push({
+        id: a.id,
+        kind: a.kind,
+        targets: a.kind === "protect" && a.allowSelf !== false ? alive.map((p) => p.id) : others,
+        usesLeft: a.uses === null ? null : me.uses[a.id] ?? 0,
+        groupSize: a.kind === "inspect_group" ? Math.min(a.groupSize ?? 3, others.length) : void 0,
+        forbidden: a.noRepeatTarget ? me.lastTarget[a.id] ?? null : void 0,
+        choice: s.nightActions[id]?.[a.id] ?? null
+      });
     }
   }
   let packTarget = null;
@@ -1408,7 +1335,7 @@ function privateView(s, id) {
   let myBallot = null;
   if (phase.kind === "speaker_election") myBallot = phase.votes[id] ?? null;
   if (phase.kind === "council") {
-    myBallot = (phase.council.step === "nomination" ? phase.council.nominations[id] : phase.council.votes[id]) ?? null;
+    myBallot = phase.council.votes[id] ?? null;
   }
   return {
     schema: 1,
@@ -1420,8 +1347,7 @@ function privateView(s, id) {
     hasPackChannel: isPack,
     packTarget,
     notes: s.notes[id] ?? [],
-    nightAction,
-    currentNightChoice: s.nightActions[id] ?? null,
+    abilities,
     sidePending: me.alive && me.sidePending,
     lastShot,
     readyCouncil: s.readyCouncil.includes(id),
@@ -1542,7 +1468,7 @@ function neutralPush(prev, next) {
     case "morning":
       return { title, body: "Im Dorf hat sich etwas ver\xE4ndert." };
     case "council":
-      return next.council?.step === "nomination" ? { title, body: "Das Dorf wird zusammengerufen." } : null;
+      return next.council?.step === "voting" ? { title, body: "Das Dorf wird zusammengerufen." } : null;
     case "ended":
       return { title, body: "Das Spiel ist zu Ende." };
     default:
@@ -1554,26 +1480,6 @@ var MESSAGE_PUSH = { title: "Das Dorf", body: "Im Dorf gibt es eine neue Nachric
 // packages/server/src/parse.ts
 var isId = (v) => typeof v === "string" && v.length > 0 && v.length <= 64;
 var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-function parseNightAction(a) {
-  if (!isObj(a)) return null;
-  switch (a.kind) {
-    case "scout":
-      return isId(a.target) ? { kind: "scout", target: a.target } : null;
-    case "track":
-      return Array.isArray(a.targets) && a.targets.length <= 14 && a.targets.every(isId) ? { kind: "track", targets: a.targets } : null;
-    case "protect":
-      return isId(a.target) ? { kind: "protect", target: a.target } : null;
-    case "alchemist": {
-      if (a.protect !== void 0 && !isId(a.protect)) return null;
-      if (a.strike !== void 0 && !isId(a.strike)) return null;
-      return { kind: "alchemist", protect: a.protect, strike: a.strike };
-    }
-    case "veil":
-      return { kind: "veil" };
-    default:
-      return null;
-  }
-}
 function parseCommand(raw) {
   if (!isObj(raw) || typeof raw.type !== "string") return null;
   switch (raw.type) {
@@ -1586,15 +1492,16 @@ function parseCommand(raw) {
     case "quest_done":
       return { type: "quest_done" };
     case "vote_speaker":
-    case "nominate":
     case "vote":
     case "decide_tie":
     case "pack_target":
     case "hunter_shoot":
       return isId(raw.target) ? { type: raw.type, target: raw.target } : null;
     case "night_action": {
-      const action = parseNightAction(raw.action);
-      return action ? { type: "night_action", action } : null;
+      if (typeof raw.ability !== "string" || !/^[a-z_]{1,32}$/.test(raw.ability)) return null;
+      if (raw.target !== void 0 && !isId(raw.target)) return null;
+      if (raw.targets !== void 0 && !(Array.isArray(raw.targets) && raw.targets.length <= 14 && raw.targets.every(isId))) return null;
+      return { type: "night_action", ability: raw.ability, target: raw.target, targets: raw.targets };
     }
     case "choose_side":
       return raw.side === "village" || raw.side === "pack" ? { type: "choose_side", side: raw.side } : null;

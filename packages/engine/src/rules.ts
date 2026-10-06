@@ -1,49 +1,85 @@
-import type { DeepPartial, RoleId, Rules } from './types';
+import type { AbilityDef, DeepPartial, RoleDef, RoleId, Rules, SizeBand, Trigger } from './types';
 
 /**
- * Startwerte für Balance und Timing. GAME_DESIGN.md nennt diese Werte
- * ausdrücklich als „Startwerte, durch Playtests anzupassen". Alles
- * Tunebare lebt hier – nirgends sonst im Code stehen Balance-Zahlen.
+ * ALLE Balance- und Rollenwerte leben hier und sind Startwerte für Simulation und Playtests.
+ * Nichts davon ist eine festgeschriebene Produktregel (siehe docs/OPEN_DECISIONS.md).
+ * Rollen sind datengetrieben: Wirkung (abilities), Häufigkeit (weight), Aktivierung (enabled, minPlayers,
+ * unlock) lassen sich ohne Codeänderung anpassen.
  */
+const LATE: Trigger[] = ['start', 'quest_reward', 'after_first_council', 'day_start'];
+
+function role(def: Partial<RoleDef> & Pick<RoleDef, 'id' | 'faction'>): RoleDef {
+  return {
+    special: true,
+    enabled: true,
+    weight: 1,
+    minPlayers: 6,
+    maxPlayers: null,
+    unlock: { triggers: LATE, earliestDay: 1, latestDay: null },
+    recipient: def.faction === 'pack' ? 'wolf' : 'villager',
+    startChoice: false,
+    abilities: [],
+    ...def,
+  };
+}
+
+const ab = (a: AbilityDef): AbilityDef => a;
+
 export const DEFAULT_RULES: Rules = {
   minPlayers: 6,
   maxPlayers: 14,
-  wolfDivisor: 3.5,
-  trackGroupSize: 3,
-  scoutUses: 2,
-  trackerUses: 3,
-  roleMinPlayers: {
-    villager: 1,
-    wolf: 1,
-    scout: 6,
-    tracker: 6,
-    guardian: 7,
-    alchemist: 8,
-    borderwalker: 8,
-    hunter: 8,
-    shadowwolf: 9,
+  wolvesByPlayers: { 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  roles: {
+    villager: role({ id: 'villager', faction: 'village', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
+    wolf: role({ id: 'wolf', faction: 'pack', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
+    scout: role({
+      id: 'scout', faction: 'village', weight: 1, minPlayers: 6,
+      abilities: [ab({ id: 'scout', kind: 'inspect', uses: 2 })],
+    }),
+    tracker: role({
+      id: 'tracker', faction: 'village', weight: 2, minPlayers: 6,
+      abilities: [ab({ id: 'track', kind: 'inspect_group', uses: 3, groupSize: 3 })],
+    }),
+    guardian: role({
+      id: 'guardian', faction: 'village', weight: 3, minPlayers: 7,
+      abilities: [ab({ id: 'protect', kind: 'protect', uses: null, noRepeatTarget: true, allowSelf: true })],
+    }),
+    alchemist: role({
+      id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8,
+      abilities: [
+        ab({ id: 'potion_protect', kind: 'protect', uses: 1, allowSelf: true }),
+        ab({ id: 'potion_strike', kind: 'strike', uses: 1 }),
+      ],
+    }),
+    borderwalker: role({
+      id: 'borderwalker', faction: 'village', weight: 1, minPlayers: 8,
+      startChoice: true, unlock: { triggers: ['start'], earliestDay: 1, latestDay: 1 },
+    }),
+    hunter: role({
+      id: 'hunter', faction: 'village', weight: 2, minPlayers: 8,
+      abilities: [ab({ id: 'last_shot', kind: 'last_shot', uses: 1 })],
+    }),
+    shadowwolf: role({
+      id: 'shadowwolf', faction: 'pack', weight: 1, minPlayers: 9,
+      abilities: [ab({ id: 'veil', kind: 'veil', uses: 1 })],
+    }),
   },
-  roleWeights: {
-    villager: 0,
-    wolf: 0,
-    scout: 1,
-    tracker: 2,
-    guardian: 3,
-    alchemist: 2,
-    borderwalker: 1,
-    hunter: 2,
-    shadowwolf: 1,
+  startSpecials: {
+    small: [{ count: 0, weight: 50 }, { count: 1, weight: 50 }],
+    medium: [{ count: 0, weight: 25 }, { count: 1, weight: 45 }, { count: 2, weight: 30 }],
+    large: [{ count: 1, weight: 50 }, { count: 2, weight: 50 }],
   },
   maxLaterSpecials: { small: 1, medium: 2, large: 3 },
-  infoBudget: { small: 2, medium: 2, large: 3 },
+  comboLimits: [{ roles: ['scout', 'tracker'], max: { small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
-  laterRoleChanceDayStart: 0.35,
-  laterRoleChanceAfterFirstCouncil: 0.5,
+  moments: {
+    quest_reward: { momentChance: 1, grantChance: 1 },
+    after_first_council: { momentChance: 0.5, grantChance: 0.6 },
+    day_start: { momentChance: 0.35, grantChance: 0.6 },
+  },
   durations: {
     speakerElectionMs: 60_000,
-    nominationMs: 90_000,
-    defenseMs: 120_000,
-    votingMs: 120_000,
+    votingMs: 180_000,
     countdownMs: 4_500,
     pointingMs: 8_000,
     tiebreakMs: 60_000,
@@ -56,7 +92,7 @@ export const DEFAULT_RULES: Rules = {
   },
   evening: {
     minDayMs: 10 * 60_000,
-    councilBudgetMs: 10 * 60_000,
+    councilBudgetMs: 8 * 60_000,
     questSpacingMs: 25 * 60_000,
     maxQuestsPerDay: 3,
   },
@@ -70,7 +106,7 @@ export function mergeRules(overrides?: DeepPartial<Rules>): Rules {
 
 function deepMerge(target: Record<string, unknown>, src: Record<string, unknown>): Record<string, unknown> {
   for (const [k, v] of Object.entries(src)) {
-    if (v && typeof v === 'object' && !Array.isArray(v) && typeof target[k] === 'object') {
+    if (v && typeof v === 'object' && !Array.isArray(v) && typeof target[k] === 'object' && !Array.isArray(target[k])) {
       deepMerge(target[k] as Record<string, unknown>, v as Record<string, unknown>);
     } else if (v !== undefined) {
       target[k] = v;
@@ -79,8 +115,6 @@ function deepMerge(target: Record<string, unknown>, src: Record<string, unknown>
   return target;
 }
 
-export type SizeBand = 'small' | 'medium' | 'large';
-
 export function sizeBand(playerCount: number): SizeBand {
   if (playerCount <= 7) return 'small';
   if (playerCount <= 10) return 'medium';
@@ -88,52 +122,8 @@ export function sizeBand(playerCount: number): SizeBand {
 }
 
 export function wolfCount(playerCount: number, rules: Rules): number {
-  return Math.max(2, Math.round(playerCount / rules.wolfDivisor));
+  return rules.wolvesByPlayers[playerCount] ?? Math.max(2, Math.round(playerCount / 3.5));
 }
 
-/** Gewichtung der Anzahl Sonderrollen beim Start (GAME_DESIGN §14 Richtwerte). */
-export function startSpecialDistribution(playerCount: number): { count: number; weight: number }[] {
-  switch (sizeBand(playerCount)) {
-    case 'small':
-      return [
-        { count: 0, weight: 50 },
-        { count: 1, weight: 50 },
-      ];
-    case 'medium':
-      return [
-        { count: 0, weight: 25 },
-        { count: 1, weight: 45 },
-        { count: 2, weight: 30 },
-      ];
-    case 'large':
-      return [
-        { count: 1, weight: 50 },
-        { count: 2, weight: 50 },
-      ];
-  }
-}
-
-export interface RoleMeta {
-  id: RoleId;
-  faction: 'village' | 'pack';
-  /** Gewicht im Informations-Budget (0 = keine Informationsrolle). */
-  infoWeight: number;
-  /** Nur beim Spielstart vergebbar (Rollen mit Fraktionswahl). */
-  startOnly: boolean;
-  /** Sonderrolle im Sinne der Richtwerte (zählt gegen die Obergrenzen). */
-  special: boolean;
-}
-
-export const ROLES: Record<RoleId, RoleMeta> = {
-  villager: { id: 'villager', faction: 'village', infoWeight: 0, startOnly: false, special: false },
-  wolf: { id: 'wolf', faction: 'pack', infoWeight: 0, startOnly: false, special: false },
-  scout: { id: 'scout', faction: 'village', infoWeight: 2, startOnly: false, special: true },
-  tracker: { id: 'tracker', faction: 'village', infoWeight: 1, startOnly: false, special: true },
-  alchemist: { id: 'alchemist', faction: 'village', infoWeight: 0, startOnly: false, special: true },
-  guardian: { id: 'guardian', faction: 'village', infoWeight: 0, startOnly: false, special: true },
-  borderwalker: { id: 'borderwalker', faction: 'village', infoWeight: 0, startOnly: true, special: true },
-  hunter: { id: 'hunter', faction: 'village', infoWeight: 0, startOnly: false, special: true },
-  shadowwolf: { id: 'shadowwolf', faction: 'pack', infoWeight: 0, startOnly: false, special: true },
-};
-
-export const SPECIAL_ROLES: RoleId[] = (Object.keys(ROLES) as RoleId[]).filter((r) => ROLES[r].special);
+export const ROLE_IDS: RoleId[] = ['villager', 'wolf', 'scout', 'tracker', 'alchemist', 'guardian', 'borderwalker', 'hunter', 'shadowwolf'];
+export const SPECIAL_ROLE_IDS: RoleId[] = ROLE_IDS.filter((r) => DEFAULT_RULES.roles[r].special);

@@ -1,9 +1,9 @@
 // Zustandsmaschine von DAS DORF. Reine Funktionen: (state, actor, command, now) → neuer state.
 // Kein I/O, keine Uhr, kein globaler Zufall → vollständig simulier- und testbar.
-import { assignStartRoles, maybeSpawnRole, type DirectorTrigger } from './director';
+import { assignStartRoles, pickLateAssignment } from './director';
 import { HINT_IMPULSE_KEYS, NEUTRAL_CHANGE_IMPULSE, QUESTS } from './content';
 import { Rng, seedToState } from './rng';
-import { mergeRules, ROLES } from './rules';
+import { mergeRules } from './rules';
 import { planDay } from './schedule';
 import type {
   Command,
@@ -12,15 +12,21 @@ import type {
   EventKind,
   Faction,
   GameState,
-  NightAction,
+  AbilityChoice,
+  AbilityDef,
   NoteKind,
   PlayerId,
   PlayerState,
   PlayerUses,
+  QuestRewardDef,
   Result,
+  RoleDef,
   RoleId,
+  Rules,
   StartInput,
+  Trigger,
 } from './types';
+import { UNLIMITED } from './types';
 
 interface Ctx {
   now: number;
@@ -77,23 +83,24 @@ function addNote(s: GameState, id: PlayerId, day: number, kind: NoteKind, data: 
   (s.notes[id] ??= []).push({ id: s.nextNoteId++, day, kind, data });
 }
 
-function freshUses(role: RoleId, s: GameState): PlayerUses {
-  return {
-    scout: role === 'scout' ? s.rules.scoutUses : 0,
-    tracker: role === 'tracker' ? s.rules.trackerUses : 0,
-    alchemistProtect: role === 'alchemist' ? 1 : 0,
-    alchemistStrike: role === 'alchemist' ? 1 : 0,
-    shadowVeil: role === 'shadowwolf' ? 1 : 0,
-  };
+/** Nutzungen je Fähigkeit aus der Rollen-Konfiguration. */
+export function initialUses(role: RoleId, rules: Rules): PlayerUses {
+  const uses: PlayerUses = {};
+  for (const a of rules.roles[role].abilities) uses[a.id] = a.uses === null ? UNLIMITED : a.uses;
+  return uses;
 }
+
+const abilitiesOf = (s: GameState, p: PlayerState): AbilityDef[] => s.rules.roles[p.role].abilities;
 
 function setRole(s: GameState, id: PlayerId, role: RoleId, day: number): void {
   const p = s.players[id]!;
+  const def = s.rules.roles[role];
   p.role = role;
-  p.faction = ROLES[role].faction;
+  p.faction = def.faction;
   p.roleSince = day;
-  p.uses = freshUses(role, s);
-  p.sidePending = role === 'borderwalker';
+  p.uses = initialUses(role, s.rules);
+  p.lastTarget = {};
+  p.sidePending = def.startChoice;
 }
 
 function setImpulse(s: GameState, ctx: Ctx, kind: 'change' | 'hint'): void {
@@ -112,12 +119,19 @@ function setImpulse(s: GameState, ctx: Ctx, kind: 'change' | 'hint'): void {
   pushEvent(s, ctx, 'impulse', undefined, { kind });
 }
 
-function applySpawn(s: GameState, ctx: Ctx, trigger: DirectorTrigger): void {
-  const a = maybeSpawnRole(s, trigger, ctx.rng);
+/**
+ * Rollen-Moment (vorab definierte Zeitpunkte). Der allgemeine Dorfimpuls erscheint bei JEDEM Moment,
+ * unabhängig davon, ob eine Rolle vergeben wird – niemand kann am Impuls erkennen, ob etwas vergeben wurde.
+ */
+function runMoment(s: GameState, ctx: Ctx, trigger: Exclude<Trigger, 'start'>): void {
+  const m = s.rules.moments[trigger];
+  if (!ctx.rng.chance(m.momentChance)) return;
+  setImpulse(s, ctx, 'change');
+  if (!ctx.rng.chance(m.grantChance)) return;
+  const a = pickLateAssignment(s, trigger, ctx.rng);
   if (!a) return;
   setRole(s, a.playerId, a.role, s.day);
   addNote(s, a.playerId, s.day, 'role_gained', { role: a.role });
-  setImpulse(s, ctx, 'change');
 }
 
 /** Spieler scheidet aus: sofort aus allem aktiven Spiel heraus (GAME_DESIGN §12). */
@@ -133,7 +147,8 @@ function eliminate(s: GameState, ctx: Ctx, id: PlayerId): void {
   // Stimmen auf den Ausgeschiedenen sind ungültig; das Rudel muss neu wählen.
   for (const [voter, target] of Object.entries(s.packVotes)) if (target === id) delete s.packVotes[voter];
   if (s.speakerId === id) s.speakerId = null;
-  if (p.role === 'hunter') s.hunterShots[id] = null;
+  // Letzter Schuss: nur, wenn die Rolle eine last_shot-Fähigkeit mit Nutzungen hat.
+  if (abilitiesOf(s, p).some((a) => a.kind === 'last_shot' && (p.uses[a.id] ?? 0) > 0)) s.hunterShots[id] = null;
 }
 
 // ───────────────────────── Spielstart ─────────────────────────
@@ -149,7 +164,7 @@ export function createGame(input: StartInput): GameState {
 
   const rng = new Rng(seedToState(input.seed));
   const ids = input.roster.map((r) => r.id);
-  const { assignments, startSpecials } = assignStartRoles(ids, rules, rng);
+  const { assignments, startSpecialCount } = assignStartRoles(ids, rules, rng);
   const seats = rng.shuffle(ids);
 
   const s: GameState = {
@@ -174,7 +189,7 @@ export function createGame(input: StartInput): GameState {
     hunterShots: {},
     usedQuestIds: [],
     usedImpulseKeys: [],
-    startSpecials,
+    startSpecialCount,
     firstCouncilDone: false,
     impulse: null,
     events: [],
@@ -192,8 +207,8 @@ export function createGame(input: StartInput): GameState {
       role: 'villager',
       faction: 'village',
       roleSince: 1,
-      uses: freshUses('villager', s),
-      lastProtected: null,
+      uses: initialUses('villager', rules),
+      lastTarget: {},
       sidePending: false,
       eliminatedDay: null,
     };
@@ -229,7 +244,7 @@ function beginDayPhase(s: GameState, ctx: Ctx): void {
   s.readyCouncil = [];
   s.readyAdvance = [];
   s.majorityAt = null;
-  if (s.day >= 2) applySpawn(s, ctx, 'day_start');
+  if (s.day >= 2) runMoment(s, ctx, 'day_start');
 
   let councilBy: number | null = null;
   let nightAt: number | null = null;
@@ -297,25 +312,45 @@ function startQuest(s: GameState, ctx: Ctx): void {
   pushEvent(s, ctx, 'quest_started', undefined, { questId: def.id });
 }
 
+function applyQuestReward(s: GameState, ctx: Ctx, reward: QuestRewardDef): void {
+  switch (reward.kind) {
+    case 'hint':
+      setImpulse(s, ctx, 'hint');
+      break;
+    case 'role':
+      // Moment mit konfigurierter Wahrscheinlichkeit; der Impuls erscheint immer, die Vergabe bleibt unsichtbar.
+      runMoment(s, ctx, 'quest_reward');
+      break;
+    case 'event':
+      pushEvent(s, ctx, 'quest_event', undefined, { eventKey: reward.eventKey });
+      break;
+  }
+}
+
+/**
+ * Beendet die Quest. Erfolgreich = alle Lebenden haben die Erfüllung bestätigt.
+ * Das bloße Beenden/Abschließen erzeugt keine Belohnung; nur ausdrücklich konfigurierte Quests
+ * (QuestDef.reward) lösen bei Erfolg etwas aus.
+ */
 function endQuest(s: GameState, ctx: Ctx): void {
   if (s.phase.kind !== 'day' || !s.phase.quest) return;
-  const questId = s.phase.quest.id;
-  const def = QUESTS.find((q) => q.id === questId);
+  const quest = s.phase.quest;
+  const def = QUESTS.find((q) => q.id === quest.id);
+  const success = livingIds(s).every((id) => quest.doneBy.includes(id));
   s.phase.quest = null;
-  pushEvent(s, ctx, 'quest_ended', undefined, { questId: def?.id });
-  if (def?.reward === 'role') applySpawn(s, ctx, 'quest_reward');
-  else if (def?.reward === 'hint') setImpulse(s, ctx, 'hint');
+  pushEvent(s, ctx, 'quest_ended', undefined, { questId: quest.id, success });
+  if (success && def?.reward) applyQuestReward(s, ctx, def.reward);
 }
 
 // ───────────────────────── Dorfrat ─────────────────────────
 
+/** Der Dorfrat beginnt direkt mit der Abstimmung: jeder Lebende wählt jeden anderen Lebenden. */
 function startCouncil(s: GameState, ctx: Ctx): void {
   const nightAt = s.phase.kind === 'day' ? s.phase.nightAt : null;
   const council: CouncilState = {
-    step: 'nomination',
-    endsAt: ctx.now + s.rules.durations.nominationMs,
-    nominations: {},
-    candidates: [],
+    step: 'voting',
+    endsAt: ctx.now + s.rules.durations.votingMs,
+    candidates: livingIds(s),
     votes: {},
     revealAt: null,
     tally: null,
@@ -328,17 +363,6 @@ function startCouncil(s: GameState, ctx: Ctx): void {
   s.readyAdvance = [];
   s.majorityAt = null;
   pushEvent(s, ctx, 'council_started');
-}
-
-function computeCandidates(s: GameState, c: CouncilState): PlayerId[] {
-  const counts: Record<PlayerId, number> = {};
-  for (const [voter, target] of Object.entries(c.nominations)) {
-    if (isAlive(s, voter) && isAlive(s, target)) counts[target] = (counts[target] ?? 0) + 1;
-  }
-  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (ranked.length === 0) return livingIds(s);
-  const cut = ranked[Math.min(2, ranked.length - 1)]![1];
-  return ranked.filter(([, n]) => n >= cut).map(([id]) => id);
 }
 
 function banish(s: GameState, ctx: Ctx, id: PlayerId, byTiebreak: boolean): void {
@@ -356,7 +380,7 @@ function tallyVotes(s: GameState, c: CouncilState): Record<PlayerId, number> {
   const tally: Record<PlayerId, number> = {};
   for (const cand of c.candidates) tally[cand] = 0;
   for (const [voter, target] of Object.entries(c.votes)) {
-    if (isAlive(s, voter) && c.candidates.includes(target)) tally[target] = (tally[target] ?? 0) + 1;
+    if (isAlive(s, voter) && voter !== target && c.candidates.includes(target)) tally[target] = (tally[target] ?? 0) + 1;
   }
   return tally;
 }
@@ -369,28 +393,8 @@ function stepCouncil(s: GameState, ctx: Ctx, force: boolean): boolean {
   const living = livingIds(s);
 
   switch (c.step) {
-    case 'nomination': {
-      const all = living.every((id) => c.nominations[id]);
-      if (!(all || now >= c.endsAt || force)) return false;
-      c.candidates = computeCandidates(s, c);
-      pushEvent(s, ctx, 'candidates', c.candidates);
-      c.step = 'defense';
-      c.endsAt = now + d.defenseMs;
-      return true;
-    }
-    case 'defense': {
-      if (!(now >= c.endsAt || force)) return false;
-      if (c.candidates.length === 1) {
-        // Nur eine Person im Gespräch: nach der Verteidigung gibt es nichts mehr zu wählen.
-        c.tally = { [c.candidates[0]!]: 0 };
-        banish(s, ctx, c.candidates[0]!, false);
-        return true;
-      }
-      c.step = 'voting';
-      c.endsAt = now + d.votingMs;
-      return true;
-    }
     case 'voting': {
+      // Alle Stimmen gesperrt (oder Frist/Notfall) → gemeinsamer Countdown 3 – 2 – 1 – ZEIGT!
       const all = living.every((id) => c.votes[id]);
       if (!(all || now >= c.endsAt || force)) return false;
       c.step = 'showdown';
@@ -399,14 +403,15 @@ function stepCouncil(s: GameState, ctx: Ctx, force: boolean): boolean {
       return true;
     }
     case 'showdown': {
+      // Erst nach dem gemeinsamen Zeigen wird das digitale Ergebnis sichtbar.
       if (!(now >= c.endsAt || force)) return false;
       const tally = tallyVotes(s, c);
       c.tally = tally;
       const top = Math.max(0, ...Object.values(tally));
-      const leaders = c.candidates.filter((id) => tally[id] === top);
-      if (top === 0) {
+      const leaders = c.candidates.filter((id) => tally[id] === top && isAlive(s, id));
+      if (top === 0 || leaders.length === 0) {
         // Niemand hat gültig gewählt: der Dorfrat endet trotzdem mit genau einer Verbannung.
-        banish(s, ctx, ctx.rng.pick(c.candidates), false);
+        banish(s, ctx, ctx.rng.pick(living), false);
         return true;
       }
       if (leaders.length === 1) {
@@ -424,7 +429,7 @@ function stepCouncil(s: GameState, ctx: Ctx, force: boolean): boolean {
     }
     case 'tiebreak': {
       if (!(now >= c.endsAt || force)) return false;
-      banish(s, ctx, ctx.rng.pick(c.tied ?? c.candidates), true);
+      banish(s, ctx, ctx.rng.pick(c.tied ?? living), true);
       return true;
     }
     case 'result': {
@@ -439,7 +444,10 @@ function stepCouncil(s: GameState, ctx: Ctx, force: boolean): boolean {
 
 function applyHunterShots(s: GameState, ctx: Ctx): void {
   for (const [hunterId, target] of Object.entries(s.hunterShots)) {
-    if (target && isAlive(s, target)) {
+    const h = s.players[hunterId];
+    const ability = h ? abilitiesOf(s, h).find((a) => a.kind === 'last_shot') : undefined;
+    if (h && ability && target && isAlive(s, target) && hasUses(h, ability)) {
+      consume(h, ability);
       eliminate(s, ctx, target);
       pushEvent(s, ctx, 'last_shot', [hunterId, target]);
     }
@@ -460,7 +468,7 @@ function proceed(s: GameState, ctx: Ctx, which: 'after_council' | 'after_night')
     const nightAt = s.phase.kind === 'council' ? s.phase.nightAt : null;
     if (!s.firstCouncilDone) {
       s.firstCouncilDone = true;
-      applySpawn(s, ctx, 'after_first_council');
+      runMoment(s, ctx, 'after_first_council');
     }
     s.readyAdvance = [];
     s.majorityAt = null;
@@ -496,68 +504,63 @@ function resolvePackTarget(s: GameState, ctx: Ctx): PlayerId | null {
   return options.length ? ctx.rng.pick(options).id : null;
 }
 
+const hasUses = (p: PlayerState, a: AbilityDef): boolean => (p.uses[a.id] ?? 0) > 0;
+const consume = (p: PlayerState, a: AbilityDef): void => {
+  if (a.uses !== null) p.uses[a.id] = (p.uses[a.id] ?? 0) - 1;
+};
+
+/**
+ * Nachtauflösung, vollständig aus den Fähigkeits-Definitionen der Rollen (Rules.roles) abgeleitet.
+ * Reihenfolge: Schleier → Informationen → Schutz → Angriff; Rudelangriff wird nur durch Schutz verhindert.
+ */
 function resolveNight(s: GameState, ctx: Ctx): void {
   const day = s.day;
-  const actions = s.nightActions;
   const target = resolvePackTarget(s, ctx);
-
-  // Schleier des Schattenwolfs: stört alle Informationswirkungen dieser Nacht.
-  let veiled = false;
-  for (const [id, a] of Object.entries(actions)) {
-    const p = s.players[id];
-    if (a.kind === 'veil' && p?.alive && p.role === 'shadowwolf' && p.uses.shadowVeil > 0) {
-      p.uses.shadowVeil -= 1;
-      veiled = true;
+  const actors = livingPlayers(s);
+  const chosen = (p: PlayerState, a: AbilityDef): AbilityChoice | undefined => s.nightActions[p.id]?.[a.id];
+  const each = (kind: AbilityDef['kind'], fn: (p: PlayerState, a: AbilityDef, c: AbilityChoice) => void) => {
+    for (const p of actors) {
+      for (const a of abilitiesOf(s, p)) {
+        const c = chosen(p, a);
+        if (a.kind === kind && c && hasUses(p, a)) fn(p, a, c);
+      }
     }
-  }
+  };
+
+  let veiled = false;
+  each('veil', (p, a) => {
+    consume(p, a);
+    veiled = true;
+  });
+  each('inspect', (p, a, c) => {
+    consume(p, a);
+    const t = c.target ? s.players[c.target] : undefined;
+    addNote(s, p.id, day, 'inspect_result', veiled || !t ? { ability: a.id, target: c.target, unclear: true } : { ability: a.id, target: c.target, faction: t.faction });
+  });
+  each('inspect_group', (p, a, c) => {
+    consume(p, a);
+    const targets = c.targets ?? [];
+    const packPresent = targets.some((tid) => s.players[tid]?.faction === 'pack');
+    addNote(s, p.id, day, 'group_result', veiled ? { ability: a.id, targets, unclear: true } : { ability: a.id, targets, packPresent });
+  });
 
   const protectedIds = new Set<PlayerId>();
-  const strikeIds: PlayerId[] = [];
-
-  for (const [id, a] of Object.entries(actions)) {
-    const p = s.players[id];
-    if (!p || !p.alive) continue;
-    switch (a.kind) {
-      case 'scout': {
-        if (p.role !== 'scout' || p.uses.scout <= 0) break;
-        p.uses.scout -= 1;
-        const t = s.players[a.target];
-        addNote(s, id, day, 'scout_result', veiled || !t ? { target: a.target, unclear: true } : { target: a.target, faction: t.faction });
-        break;
-      }
-      case 'track': {
-        if (p.role !== 'tracker' || p.uses.tracker <= 0) break;
-        p.uses.tracker -= 1;
-        const hasWolf = a.targets.some((tid) => s.players[tid]?.faction === 'pack');
-        addNote(s, id, day, 'track_result', veiled ? { targets: a.targets, unclear: true } : { targets: a.targets, packPresent: hasWolf });
-        break;
-      }
-      case 'protect': {
-        if (p.role !== 'guardian') break;
-        protectedIds.add(a.target);
-        p.lastProtected = a.target;
-        break;
-      }
-      case 'alchemist': {
-        if (p.role !== 'alchemist') break;
-        if (a.protect && p.uses.alchemistProtect > 0) {
-          p.uses.alchemistProtect -= 1;
-          protectedIds.add(a.protect);
-        }
-        if (a.strike && p.uses.alchemistStrike > 0) {
-          p.uses.alchemistStrike -= 1;
-          strikeIds.push(a.strike);
-        }
-        break;
-      }
-      default:
-        break;
+  each('protect', (p, a, c) => {
+    consume(p, a);
+    if (c.target) {
+      protectedIds.add(c.target);
+      p.lastTarget[a.id] = c.target;
     }
+  });
+  // Nicht-Wiederholungs-Sperre läuft ab, wenn in dieser Nacht nicht geschützt wurde.
+  for (const p of actors) {
+    for (const a of abilitiesOf(s, p)) if (a.kind === 'protect' && !chosen(p, a)) p.lastTarget[a.id] = null;
   }
-  // Wächter ohne Aktion: Sperre „nicht zwei Nächte in Folge" setzt zurück.
-  for (const p of Object.values(s.players)) {
-    if (p.role === 'guardian' && p.alive && actions[p.id]?.kind !== 'protect') p.lastProtected = null;
-  }
+  const strikeIds: PlayerId[] = [];
+  each('strike', (p, a, c) => {
+    consume(p, a);
+    if (c.target) strikeIds.push(c.target);
+  });
 
   const deaths: PlayerId[] = [];
   if (target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
@@ -702,55 +705,40 @@ function requireLivingTarget(s: GameState, target: PlayerId, opts: { not?: Playe
   return t;
 }
 
-function applyNightAction(s: GameState, actor: PlayerState, a: NightAction): void {
+function applyNightAction(s: GameState, actor: PlayerState, cmd: Extract<Command, { type: 'night_action' }>): void {
   if (s.phase.kind !== 'night') fail('wrong_phase', 'Nachtaktionen gibt es nur nachts');
+  const a = abilitiesOf(s, actor).find((x) => x.id === cmd.ability);
+  if (!a || a.kind === 'last_shot') return fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
+  if (!hasUses(actor, a)) fail('no_uses_left', 'Keine Nutzungen übrig');
+  let choice: AbilityChoice = {};
   switch (a.kind) {
-    case 'scout': {
-      if (actor.role !== 'scout') fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
-      if (actor.uses.scout <= 0) fail('no_uses_left', 'Keine Nutzungen übrig');
-      requireLivingTarget(s, a.target, { not: actor.id });
-      break;
-    }
-    case 'track': {
-      if (actor.role !== 'tracker') fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
-      if (actor.uses.tracker <= 0) fail('no_uses_left', 'Keine Nutzungen übrig');
-      const targets = [...new Set(a.targets)];
-      const others = livingPlayers(s).filter((p) => p.id !== actor.id).length;
-      const size = Math.min(s.rules.trackGroupSize, others);
-      if (targets.length !== size || targets.length !== a.targets.length) {
-        fail('invalid_target', `Wähle genau ${size} verschiedene Personen`);
-      }
-      for (const t of targets) requireLivingTarget(s, t, { not: actor.id });
+    case 'inspect':
+    case 'strike': {
+      if (!cmd.target) return fail('invalid_target', 'Ziel fehlt');
+      requireLivingTarget(s, cmd.target, { not: actor.id });
+      choice = { target: cmd.target };
       break;
     }
     case 'protect': {
-      if (actor.role !== 'guardian') fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
-      requireLivingTarget(s, a.target);
-      if (actor.lastProtected === a.target) fail('invalid_target', 'Dieselbe Person nicht zwei Nächte in Folge');
+      if (!cmd.target) return fail('invalid_target', 'Ziel fehlt');
+      requireLivingTarget(s, cmd.target, a.allowSelf === false ? { not: actor.id } : {});
+      if (a.noRepeatTarget && actor.lastTarget[a.id] === cmd.target) fail('invalid_target', 'Dieselbe Person nicht zwei Nächte in Folge');
+      choice = { target: cmd.target };
       break;
     }
-    case 'alchemist': {
-      if (actor.role !== 'alchemist') fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
-      if (!a.protect && !a.strike) fail('invalid_command', 'Keine Wirkung gewählt');
-      if (a.protect) {
-        if (actor.uses.alchemistProtect <= 0) fail('no_uses_left', 'Dieser Trank ist verbraucht');
-        requireLivingTarget(s, a.protect);
-      }
-      if (a.strike) {
-        if (actor.uses.alchemistStrike <= 0) fail('no_uses_left', 'Dieser Trank ist verbraucht');
-        requireLivingTarget(s, a.strike, { not: actor.id });
-      }
+    case 'inspect_group': {
+      const targets = cmd.targets ?? [];
+      const others = livingPlayers(s).filter((p) => p.id !== actor.id).length;
+      const size = Math.min(a.groupSize ?? 3, others);
+      if (new Set(targets).size !== targets.length || targets.length !== size) fail('invalid_target', `Wähle genau ${size} verschiedene Personen`);
+      for (const t of targets) requireLivingTarget(s, t, { not: actor.id });
+      choice = { targets };
       break;
     }
-    case 'veil': {
-      if (actor.role !== 'shadowwolf') fail('not_allowed', 'Diese Aktion steht dir nicht zur Verfügung');
-      if (actor.uses.shadowVeil <= 0) fail('no_uses_left', 'Bereits benutzt');
+    case 'veil':
       break;
-    }
-    default:
-      fail('invalid_command', 'Unbekannte Aktion');
   }
-  s.nightActions[actor.id] = a;
+  (s.nightActions[actor.id] ??= {})[a.id] = choice;
 }
 
 function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: Ctx): void {
@@ -817,13 +805,6 @@ function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: 
       ep.votes[actor.id] = cmd.target;
       return;
     }
-    case 'nominate': {
-      const np = s.phase;
-      if (np.kind !== 'council' || np.council.step !== 'nomination') return fail('wrong_phase', 'Jetzt wird nicht nominiert');
-      requireLivingTarget(s, cmd.target, { not: actor.id });
-      np.council.nominations[actor.id] = cmd.target;
-      return;
-    }
     case 'vote': {
       const vp = s.phase;
       if (vp.kind !== 'council' || vp.council.step !== 'voting') return fail('wrong_phase', 'Jetzt wird nicht abgestimmt');
@@ -854,11 +835,11 @@ function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: 
       return;
     }
     case 'night_action': {
-      applyNightAction(s, actor, cmd.action);
+      applyNightAction(s, actor, cmd);
       return;
     }
     case 'choose_side': {
-      if (actor.role !== 'borderwalker' || !actor.sidePending) fail('not_allowed', 'Keine Wahl offen');
+      if (!actor.sidePending) fail('not_allowed', 'Keine Wahl offen');
       if (s.phase.kind === 'night' || s.phase.kind === 'ended') fail('wrong_phase', 'Zu spät für diese Wahl');
       actor.sidePending = false;
       actor.faction = cmd.side;

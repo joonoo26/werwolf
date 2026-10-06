@@ -58,9 +58,8 @@ describe('Zufallsspiele (Invarianten)', () => {
           const copy = JSON.parse(JSON.stringify(view));
           delete copy.role;
           delete copy.faction;
-          delete copy.nightAction; // eigene Aktionsbeschreibung nennt die eigene Rolle
-          delete copy.currentNightChoice;
-          for (const n of copy.notes) if (n.kind === 'role' || n.kind === 'role_gained') delete n.data.role;
+          delete copy.abilities; // eigene Fähigkeiten nennen die eigene Rolle
+          for (const n of copy.notes) { delete n.data.ability; if (n.kind === 'role' || n.kind === 'role_gained') delete n.data.role; }
           const json = JSON.stringify(copy);
           expect(json).not.toMatch(/"(villager|wolf|scout|tracker|alchemist|guardian|borderwalker|hunter|shadowwolf)"/);
           if (!(me.alive && me.faction === 'pack')) {

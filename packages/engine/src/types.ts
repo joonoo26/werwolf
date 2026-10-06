@@ -16,13 +16,9 @@ export type RoleId =
   | 'hunter'
   | 'shadowwolf';
 
-export interface PlayerUses {
-  scout: number;
-  tracker: number;
-  alchemistProtect: number;
-  alchemistStrike: number;
-  shadowVeil: number;
-}
+/** Verbleibende Nutzungen je Fähigkeit-ID (UNLIMITED = unbegrenzt). */
+export type PlayerUses = Record<string, number>;
+export const UNLIMITED = 1_000_000;
 
 export interface PlayerState {
   id: PlayerId;
@@ -34,37 +30,88 @@ export interface PlayerState {
   /** Tag, an dem die Rolle zugewiesen wurde (1 = Spielstart). */
   roleSince: number;
   uses: PlayerUses;
-  /** Wächter: zuletzt geschützte Person (nicht zwei Nächte in Folge dieselbe). */
-  lastProtected: PlayerId | null;
-  /** Grenzgänger: wartet auf die Fraktionswahl. */
+  /** Zuletzt gewähltes Ziel je Fähigkeit (für „nicht zweimal in Folge"). */
+  lastTarget: Record<string, PlayerId | null>;
+  /** Wartet auf die Fraktionswahl (Rollen mit startChoice). */
   sidePending: boolean;
   eliminatedDay: number | null;
+}
+
+export type AbilityKind = 'inspect' | 'inspect_group' | 'protect' | 'strike' | 'veil' | 'last_shot';
+
+/**
+ * Datengetriebene Fähigkeit. Wirkung, Nutzungszahl und Parameter sind Konfiguration (Rules.roles),
+ * keine festgeschriebene Produktregel. Alle Werte sind Playtest-Startwerte.
+ */
+export interface AbilityDef {
+  id: string;
+  kind: AbilityKind;
+  /** null = unbegrenzt. */
+  uses: number | null;
+  /** inspect_group: Größe der gewählten Gruppe. */
+  groupSize?: number;
+  /** protect: dasselbe Ziel nicht in zwei aufeinanderfolgenden Nächten. */
+  noRepeatTarget?: boolean;
+  /** protect: darf sich selbst wählen (Standard true). */
+  allowSelf?: boolean;
+}
+
+export type Trigger = 'start' | 'quest_reward' | 'after_first_council' | 'day_start';
+
+export interface RoleDef {
+  id: RoleId;
+  faction: Faction;
+  /** Zählt als Sonderrolle (Richtwerte, Pools). */
+  special: boolean;
+  /** Ausgeschaltete Rollen werden nie vergeben. */
+  enabled: boolean;
+  /** Gewicht im gewichteten Zufall. */
+  weight: number;
+  minPlayers: number;
+  maxPlayers: number | null;
+  /** Wann die Rolle vergeben werden darf. Nur 'start' = reine Startrolle. */
+  unlock: { triggers: Trigger[]; earliestDay: number; latestDay: number | null };
+  /** Wer die Rolle beim späteren Vergeben erhalten darf. */
+  recipient: 'villager' | 'wolf';
+  /** Geheime Fraktionswahl der Person selbst (z. B. Grenzgänger). */
+  startChoice: boolean;
+  abilities: AbilityDef[];
+}
+
+export type SizeBand = 'small' | 'medium' | 'large';
+
+export type QuestRewardDef =
+  | { kind: 'hint' }
+  /** Löst einen Rollen-Moment aus (Pool, Gewicht und grantChance bestimmen, ob wirklich eine Rolle vergeben wird). */
+  | { kind: 'role' }
+  /** Öffentliches Ereignis ohne Mechanik (Mechanik wird später konfiguriert). */
+  | { kind: 'event'; eventKey: string };
+
+export interface MomentDef {
+  /** Wahrscheinlichkeit, dass der Moment (und damit der öffentliche Dorfimpuls) überhaupt stattfindet. */
+  momentChance: number;
+  /** Wahrscheinlichkeit, dass im Moment wirklich eine Rolle vergeben wird (Pool erlaubt vorausgesetzt). */
+  grantChance: number;
 }
 
 export interface Rules {
   minPlayers: number;
   maxPlayers: number;
-  /** Anteil Rudel an der Spielerzahl (Startwert, Playtest). */
-  wolfDivisor: number;
-  /** Anzahl Spieler in der Fährtenleser-Gruppe. */
-  trackGroupSize: number;
-  scoutUses: number;
-  trackerUses: number;
-  /** Mindestspielerzahl je Rolle. */
-  roleMinPlayers: Record<RoleId, number>;
-  roleWeights: Record<RoleId, number>;
-  /** Weitere Sonderrollen nach dem Start (Obergrenze) je Spielerzahl-Band. */
-  maxLaterSpecials: { small: number; medium: number; large: number };
-  /** Informations-Budget lebender Info-Rollen (Späher=2, Fährtenleser=1). */
-  infoBudget: { small: number; medium: number; large: number };
-  /** Ab dieser Zahl lebender Spieler werden keine neuen Rollen mehr eingeführt. */
+  /** Anzahl Rudelmitglieder je Spielerzahl (Startwerte, zentral anpassbar). */
+  wolvesByPlayers: Record<number, number>;
+  roles: Record<RoleId, RoleDef>;
+  /** Verteilung der Sonderrollen beim Start je Größenband (GAME_DESIGN §14 Richtwerte). */
+  startSpecials: Record<SizeBand, { count: number; weight: number }[]>;
+  /** Obergrenze zusätzlicher Sonderrollen nach dem Start. */
+  maxLaterSpecials: Record<SizeBand, number>;
+  /** Vorab erlaubte Kombinationen: höchstens `max` Rollen aus der Gruppe je Partie. */
+  comboLimits: { roles: RoleId[]; max: Record<SizeBand, number> }[];
+  /** Ab dieser Zahl lebender Spieler werden keine neuen Rollen mehr eingeführt (0 = aus). Zustandsabhängig, aber nicht stärkebasiert. */
   finaleAlive: number;
-  laterRoleChanceDayStart: number;
-  laterRoleChanceAfterFirstCouncil: number;
+  /** Rollen-Momente. Impulse erscheinen bei JEDEM Moment, unabhängig davon, ob eine Rolle vergeben wird. */
+  moments: Record<Exclude<Trigger, 'start'>, MomentDef>;
   durations: {
     speakerElectionMs: number;
-    nominationMs: number;
-    defenseMs: number;
     votingMs: number;
     countdownMs: number; // 3 – 2 – 1 – ZEIGT!
     pointingMs: number; // Zeit zum gleichzeitigen Zeigen
@@ -85,14 +132,13 @@ export interface Rules {
   };
 }
 
-export type NightAction =
-  | { kind: 'scout'; target: PlayerId }
-  | { kind: 'track'; targets: PlayerId[] }
-  | { kind: 'protect'; target: PlayerId }
-  | { kind: 'alchemist'; protect?: PlayerId; strike?: PlayerId }
-  | { kind: 'veil' };
+/** Auswahl einer Fähigkeit (Art ergibt sich aus der Fähigkeit-Definition der Rolle). */
+export interface AbilityChoice {
+  target?: PlayerId;
+  targets?: PlayerId[];
+}
 
-export type NoteKind = 'role' | 'scout_result' | 'track_result' | 'pack_joined' | 'role_gained' | 'info';
+export type NoteKind = 'role' | 'inspect_result' | 'group_result' | 'role_gained' | 'info';
 
 export interface PrivateNote {
   id: number;
@@ -108,12 +154,12 @@ export interface ActiveQuest {
   startedAt: number;
 }
 
-export type CouncilStep = 'nomination' | 'defense' | 'voting' | 'showdown' | 'tiebreak' | 'result';
+export type CouncilStep = 'voting' | 'showdown' | 'tiebreak' | 'result';
 
 export interface CouncilState {
   step: CouncilStep;
   endsAt: number;
-  nominations: Record<PlayerId, PlayerId>;
+  /** Alle bei Beginn lebenden Spieler sind wählbar (keine Nominierung). */
   candidates: PlayerId[];
   votes: Record<PlayerId, PlayerId>;
   /** Zeitpunkt von „ZEIGT!" (nur Showdown). */
@@ -121,7 +167,6 @@ export interface CouncilState {
   tally: Record<PlayerId, number> | null;
   tied: PlayerId[] | null;
   banished: PlayerId | null;
-  /** Wie es nach der Ergebnisanzeige weitergeht. */
   decidedByTiebreak: boolean;
 }
 
@@ -148,9 +193,9 @@ export type EventKind =
   | 'speaker_elected'
   | 'quest_started'
   | 'quest_ended'
+  | 'quest_event'
   | 'council_ready'
   | 'council_started'
-  | 'candidates'
   | 'banished'
   | 'night_began'
   | 'morning'
@@ -196,14 +241,15 @@ export interface GameState {
   readyAdvance: PlayerId[];
   majorityAt: number | null;
   packVotes: Record<PlayerId, PlayerId>;
-  nightActions: Record<PlayerId, NightAction>;
+  /** Nachtwahl je Spieler und Fähigkeit-ID. */
+  nightActions: Record<PlayerId, Record<string, AbilityChoice>>;
   notes: Record<PlayerId, PrivateNote[]>;
   /** Ausgeschiedene Jäger → gewähltes Ziel (wird erst am Ende des Fensters wirksam, damit der Zeitpunkt nichts verrät). */
   hunterShots: Record<PlayerId, PlayerId | null>;
   usedQuestIds: string[];
   usedImpulseKeys: string[];
   /** Anzahl Sonderrollen, die beim Start vergeben wurden. */
-  startSpecials: number;
+  startSpecialCount: number;
   firstCouncilDone: boolean;
   impulse: Impulse | null;
   events: PublicEvent[];
@@ -218,11 +264,10 @@ export type Command =
   | { type: 'start_council' }
   | { type: 'quest_done' }
   | { type: 'vote_speaker'; target: PlayerId }
-  | { type: 'nominate'; target: PlayerId }
   | { type: 'vote'; target: PlayerId }
   | { type: 'decide_tie'; target: PlayerId }
   | { type: 'pack_target'; target: PlayerId }
-  | { type: 'night_action'; action: NightAction }
+  | { type: 'night_action'; ability: string; target?: PlayerId; targets?: PlayerId[] }
   | { type: 'choose_side'; side: Faction }
   | { type: 'hunter_shoot'; target: PlayerId };
 

@@ -1,67 +1,109 @@
 import { describe, expect, it } from 'vitest';
-import { isRoleEligible, maybeSpawnRole } from '../src/director';
+import { assignStartRoles, isRoleAllowed, pickLateAssignment } from '../src/director';
 import { Rng, seedToState } from '../src/rng';
-import { DEFAULT_RULES } from '../src/rules';
-import { alive, newGame, withRoles } from './helpers';
+import { DEFAULT_RULES, mergeRules, wolfCount } from '../src/rules';
+import { applyCommand, createGame } from '../src/engine';
+import type { GameState, RoleId } from '../src/types';
+import { alive, newGame, roster, T0, withRoles } from './helpers';
 
-const ctx = (over: Partial<Parameters<typeof isRoleEligible>[1]> = {}) => ({
-  isStart: false,
-  playerCount: 10,
-  aliveCount: 10,
-  packAlive: 3,
-  ...over,
+const ctx = (over: Partial<Parameters<typeof isRoleAllowed>[1]> = {}) => ({
+  trigger: 'quest_reward' as const, day: 2, playerCount: 10, assigned: [] as RoleId[], aliveCount: 10, ...over,
 });
 
-describe('Rollen-Direktor / Guardrails', () => {
-  it('führt im Finale keine neue Rolle mehr ein', () => {
-    const s = withRoles(newGame(10, 'f'), { p1: 'wolf', p2: 'wolf' });
-    for (const id of ['p4', 'p5', 'p6', 'p7', 'p8']) s.players[id]!.alive = false; // 5 leben
-    expect(isRoleEligible('guardian', ctx({ aliveCount: 5, packAlive: 2 }), s, DEFAULT_RULES)).toBe(false);
-    const rng = new Rng(seedToState('x'));
-    for (let i = 0; i < 50; i++) expect(maybeSpawnRole(s, 'quest_reward', rng)).toBeNull();
+describe('Rollen-Pools und Freischaltung (vorab konfiguriert)', () => {
+  it('Grenzgänger ist reine Startrolle', () => {
+    expect(isRoleAllowed(DEFAULT_RULES.roles.borderwalker, ctx({ trigger: 'start', day: 1 }), DEFAULT_RULES)).toBe(true);
+    expect(isRoleAllowed(DEFAULT_RULES.roles.borderwalker, ctx({ trigger: 'quest_reward' }), DEFAULT_RULES)).toBe(false);
+    expect(isRoleAllowed(DEFAULT_RULES.roles.borderwalker, ctx({ trigger: 'day_start' }), DEFAULT_RULES)).toBe(false);
   });
-  it('Grenzgänger ist nur beim Start vergebbar', () => {
-    const s = newGame(10, 'bw');
-    expect(isRoleEligible('borderwalker', ctx({ isStart: false }), withRoles(s, {}), DEFAULT_RULES)).toBe(false);
-    expect(isRoleEligible('borderwalker', ctx({ isStart: true }), null, DEFAULT_RULES)).toBe(true);
+  it('respektiert Mindestspielerzahl, Aktivierung und Gewicht aus der Konfiguration', () => {
+    expect(isRoleAllowed(DEFAULT_RULES.roles.hunter, ctx({ playerCount: 7 }), DEFAULT_RULES)).toBe(false);
+    const off = mergeRules({ roles: { hunter: { enabled: false } } } as never);
+    expect(isRoleAllowed(off.roles.hunter, ctx(), off)).toBe(false);
+    const zero = mergeRules({ roles: { hunter: { weight: 0 } } } as never);
+    expect(isRoleAllowed(zero.roles.hunter, ctx(), zero)).toBe(false);
   });
-  it('stapelt keine starken Informationsrollen', () => {
-    const s = withRoles(newGame(10, 'info'), { p1: 'wolf', p2: 'wolf', p3: 'scout' });
-    expect(isRoleEligible('tracker', ctx(), s, DEFAULT_RULES)).toBe(false); // 2 + 1 > Budget 2
+  it('respektiert Freischaltzeitpunkte (frühester/spätester Tag)', () => {
+    const r = mergeRules({ roles: { guardian: { unlock: { earliestDay: 3 } } } } as never);
+    expect(isRoleAllowed(r.roles.guardian, ctx({ day: 2 }), r)).toBe(false);
+    expect(isRoleAllowed(r.roles.guardian, ctx({ day: 3 }), r)).toBe(true);
   });
-  it('vergibt eine Rolle nie doppelt', () => {
-    const s = withRoles(newGame(10, 'dup'), { p1: 'wolf', p2: 'wolf', p3: 'guardian' });
-    expect(isRoleEligible('guardian', ctx(), s, DEFAULT_RULES)).toBe(false);
+  it('wendet vorab definierte Kombinationslimits an (Späher + Fährtenleser)', () => {
+    expect(isRoleAllowed(DEFAULT_RULES.roles.tracker, ctx({ assigned: ['scout'], playerCount: 9 }), DEFAULT_RULES)).toBe(false);
+    expect(isRoleAllowed(DEFAULT_RULES.roles.tracker, ctx({ assigned: ['scout'], playerCount: 12 }), DEFAULT_RULES)).toBe(true);
   });
-  it('gibt kleine Gruppen höchstens eine weitere Sonderrolle', () => {
-    let given = 0;
-    for (let i = 0; i < 100; i++) {
-      const s = withRoles(newGame(7, `sm${i}`), { p1: 'wolf', p2: 'wolf' });
-      s.startSpecials = 0;
-      const rng = new Rng(seedToState('sm' + i));
-      const a = maybeSpawnRole(s, 'quest_reward', rng);
-      if (a) {
-        given++;
-        s.players[a.playerId]!.role = a.role;
-        expect(maybeSpawnRole(s, 'quest_reward', rng)).toBeNull();
+  it('vergibt jede Sonderrolle höchstens einmal', () => {
+    expect(isRoleAllowed(DEFAULT_RULES.roles.guardian, ctx({ assigned: ['guardian'] }), DEFAULT_RULES)).toBe(false);
+  });
+  it('führt im Finale (konfigurierbar) keine neue Rolle ein', () => {
+    expect(isRoleAllowed(DEFAULT_RULES.roles.guardian, ctx({ aliveCount: 5 }), DEFAULT_RULES)).toBe(false);
+    const off = mergeRules({ finaleAlive: 0 });
+    expect(isRoleAllowed(off.roles.guardian, ctx({ aliveCount: 3 }), off)).toBe(true);
+  });
+});
+
+describe('Kein verstecktes Dynamic Difficulty Balancing', () => {
+  /** Dieselbe Besetzung, nur andere Stärkeverhältnisse der Parteien → identische Vergabe bei identischem Seed. */
+  it('die Vergabe hängt nicht von der aktuellen Stärke der Parteien ab', () => {
+    const base = withRoles(newGame(13, 'ddb'), { p1: 'wolf', p2: 'wolf', p3: 'wolf', p4: 'wolf' });
+    base.startSpecialCount = 0;
+    base.day = 3;
+    const outcomes = (kill: string[]) => {
+      const s = JSON.parse(JSON.stringify(base)) as GameState;
+      for (const id of kill) s.players[id]!.alive = false;
+      const res: (string | null)[] = [];
+      for (let i = 0; i < 40; i++) {
+        const a = pickLateAssignment(s, 'quest_reward', new Rng(seedToState('seed' + i)));
+        res.push(a ? a.role : null);
       }
-    }
-    expect(given).toBeGreaterThan(0);
+      return res;
+    };
+    // Rudel stark (viele Dorfbewohner tot) vs. Dorf stark (Wölfe teilweise tot): identische Vergabe bei gleichem Seed
+    const packStrong = outcomes(['p6', 'p7', 'p8']);
+    const villageStrong = outcomes(['p3', 'p4']);
+    expect(packStrong).toEqual(villageStrong);
+    expect(packStrong.some((r) => r !== null)).toBe(true);
   });
-  it('Schattenwolf geht nur an einen Wolf, Dorfrollen nur an Dorfbewohner ohne Rolle', () => {
-    for (let i = 0; i < 300; i++) {
-      const s = withRoles(newGame(13, `rc${i}`), { p1: 'wolf', p2: 'wolf', p3: 'wolf', p4: 'scout' });
-      s.startSpecials = 1;
-      const a = maybeSpawnRole(s, 'quest_reward', new Rng(seedToState(`rc${i}`)));
-      if (!a) continue;
-      const before = s.players[a.playerId]!.role;
-      if (a.role === 'shadowwolf') expect(before).toBe('wolf');
-      else expect(before).toBe('villager');
-      expect(alive(s).some((p) => p.id === a.playerId)).toBe(true);
+
+  it('der Quellcode des Direktors enthält keinen Stärkevergleich der Parteien', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/director.ts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+    expect(src).not.toMatch(/packAlive|balance|faction === 'pack'.*alive|alive.*faction/);
+  });
+});
+
+describe('Startverteilung', () => {
+  it('Rudelgröße kommt aus der zentralen Tabelle und ist überschreibbar', () => {
+    expect(wolfCount(10, DEFAULT_RULES)).toBe(3);
+    const r = mergeRules({ wolvesByPlayers: { 10: 2 } } as never);
+    expect(wolfCount(10, r)).toBe(2);
+    const s = createGame({ roster: roster(10), hostId: 'p1', mode: 'classic', seed: 'x', now: T0, rules: { wolvesByPlayers: { 10: 2 } } as never });
+    expect(Object.values(s.players).filter((p) => p.faction === 'pack')).toHaveLength(2);
+  });
+  it('die Startverteilung ist konfigurierbar (z. B. immer 2 Sonderrollen)', () => {
+    const rules = mergeRules({ startSpecials: { medium: [{ count: 2, weight: 1 }] } } as never);
+    for (let i = 0; i < 30; i++) {
+      const { assignments, startSpecialCount } = assignStartRoles(roster(10).map((r) => r.id), rules, new Rng(seedToState('d' + i)));
+      expect(startSpecialCount).toBe(2);
+      expect(assignments.filter((a) => rules.roles[a.role].special)).toHaveLength(2);
     }
   });
-  it('kippt keine fast entschiedene Partie zugunsten des Rudels', () => {
-    const s = withRoles(newGame(12, 'bal'), { p1: 'wolf', p2: 'wolf', p3: 'wolf', p4: 'wolf', p5: 'wolf' });
-    expect(isRoleEligible('shadowwolf', ctx({ playerCount: 12, aliveCount: 9, packAlive: 5 }), s, DEFAULT_RULES)).toBe(false);
+  it('deaktivierte Rollen werden nie vergeben', () => {
+    const roles = Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'borderwalker', 'shadowwolf'].map((r) => [r, { enabled: false }]));
+    for (let i = 0; i < 100; i++) {
+      const s = createGame({ roster: roster(12), hostId: 'p1', mode: 'classic', seed: 'off' + i, now: T0, rules: { roles } as never });
+      for (const p of Object.values(s.players)) expect(['villager', 'wolf', 'hunter']).toContain(p.role);
+    }
+  });
+});
+
+describe('Rollen-Momente: Impulse verraten nicht, ob eine Rolle vergeben wurde', () => {
+  it('bei jedem Moment erscheint derselbe Impuls – auch wenn keine Rolle vergeben wird', () => {
+    const rules = { moments: { day_start: { momentChance: 1, grantChance: 0 } } } as never;
+    const none = createGame({ roster: roster(10), hostId: 'p1', mode: 'classic', seed: 'm', now: T0, rules });
+    // Zwei Partien mit identischem Ablauf, aber grantChance 0 vs 1: öffentliche Sicht ist identisch strukturiert
+    const rules1 = { moments: { day_start: { momentChance: 1, grantChance: 1 } } } as never;
+    const some = createGame({ roster: roster(10), hostId: 'p1', mode: 'classic', seed: 'm', now: T0, rules: rules1 });
+    expect(none.impulse?.textKey).toBe(some.impulse?.textKey);
   });
 });

@@ -13,7 +13,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build:functions": "node scripts/build-functions.mjs",
     "check:functions": "node scripts/build-functions.mjs --check",
-    "lint:types": "npm run typecheck"
+    "lint:types": "npm run typecheck",
+    "balance:table": "node scripts/balance-table.mjs"
   },
   "engines": {
     "node": ">=20"

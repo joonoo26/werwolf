@@ -1,3 +1,5 @@
+import type { QuestRewardDef } from './types';
+
 // Eigene Inhalte (keine fremden Texte): Quests und Dorfimpulse.
 // Texte sind bewusst kurz, ruhig und nicht-gewaltig (STYLE_GUIDE §19).
 
@@ -17,8 +19,11 @@ export interface QuestDef {
   goal: string;
   task: string;
   finish: string;
-  /** Ein paar besondere Quests schalten bei Abschluss etwas frei. */
-  reward: 'none' | 'role' | 'hint';
+  /**
+   * Spielmechanische Belohnung bei ERFOLGREICHER Erfüllung (alle Lebenden bestätigen vor Ablauf der Zeit).
+   * Standard: keine. Nur ausdrücklich konfigurierte Quests lösen etwas aus.
+   */
+  reward?: QuestRewardDef;
   durationMs?: number;
 }
 
@@ -30,7 +35,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Findet heraus, wie gut ihr einander einschätzt.',
     task: 'Jemand liest „Wer von euch würde bei Stromausfall als Erstes die Kerzen finden?“ vor. Alle zeigen gleichzeitig auf eine Person. Danach darf die gezeigte Person erklären, ob es stimmt.',
     finish: 'Fertig, sobald alle ihre Einschätzung erklärt haben.',
-    reward: 'none',
   },
   {
     id: 'q-wer-von-euch-2',
@@ -39,7 +43,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Tippt, wer in diesem Raum am schwersten aus der Ruhe zu bringen ist.',
     task: 'Jeder schreibt einen Namen auf einen Zettel oder merkt ihn sich. Dann nennt reihum, wen ihr gewählt habt – und warum.',
     finish: 'Fertig, wenn jede Begründung gehört wurde.',
-    reward: 'hint',
   },
   {
     id: 'q-tabu-1',
@@ -48,7 +51,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Erklärt einen Begriff, ohne ihn auszusprechen.',
     task: 'Reihum zieht jemand im Kopf einen Alltagsgegenstand und erklärt ihn der Gruppe, ohne dessen Namen oder Verwandte davon zu nennen. Wer das Wort rät, erklärt als Nächstes.',
     finish: 'Fertig nach drei erratenen Begriffen oder Ablauf der Zeit.',
-    reward: 'none',
   },
   {
     id: 'q-tabu-2',
@@ -57,7 +59,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Haltet ein kurzes Gespräch, ohne eine bestimmte Silbe zu benutzen.',
     task: 'Das Dorf einigt sich auf ein häufiges Wort („ja“, „nein“ oder „ich“). Zwei Minuten lang darf es niemand sagen. Wer es doch tut, sagt danach ein Geheimnis, das keines ist.',
     finish: 'Fertig nach zwei Minuten.',
-    reward: 'none',
     durationMs: 4 * 60_000,
   },
   {
@@ -67,7 +68,7 @@ export const QUESTS: QuestDef[] = [
     goal: 'Findet ohne Absprache dieselbe Antwort.',
     task: 'Alle denken sich gleichzeitig eine Farbe, eine Zahl von 1 bis 10 und ein Tier aus. Auf „Jetzt“ sagen alle laut ihre Antworten. Wie viele Übereinstimmungen gibt es?',
     finish: 'Fertig nach drei Runden. Ihr dürft nach jeder Runde nur schweigen und nicken.',
-    reward: 'role',
+    reward: { kind: 'role' },
   },
   {
     id: 'q-koordination-2',
@@ -76,7 +77,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Bringt das Dorf in einen gemeinsamen Rhythmus.',
     task: 'Ohne zu sprechen, versucht ihr, nacheinander von 1 bis zur Zahl der Mitspielenden zu zählen. Wenn zwei gleichzeitig sprechen, beginnt ihr von vorn.',
     finish: 'Fertig, sobald ihr einmal ohne Überschneidung durchkommt – oder die Zeit abläuft.',
-    reward: 'none',
   },
   {
     id: 'q-wissen-1',
@@ -85,7 +85,7 @@ export const QUESTS: QuestDef[] = [
     goal: 'Findet heraus, was das Dorf gemeinsam weiß.',
     task: 'Sammelt zusammen zehn Dinge, die garantiert jede Person in diesem Raum kennt, aber keine Fremde kennen würde.',
     finish: 'Fertig bei zehn Dingen, die alle bestätigen.',
-    reward: 'hint',
+    reward: { kind: 'hint' },
   },
   {
     id: 'q-wissen-2',
@@ -94,7 +94,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Beschreibt einen Ort, den alle schon gesehen haben.',
     task: 'Reihum nennt jemand einen Satz über einen Ort, den alle kennen müssten. Der Ort darf nicht genannt werden. Sobald alle ihn erraten, beginnt ein neuer.',
     finish: 'Fertig nach zwei Orten.',
-    reward: 'none',
   },
   {
     id: 'q-sortieren-1',
@@ -103,7 +102,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Stellt euch ohne zu sprechen in der richtigen Reihenfolge auf.',
     task: 'Ordnet euch nach Geburtstag im Jahr, ohne zu sprechen. Zeigt, was ihr könnt: Finger, Gesten, Blicke. Dann prüft laut.',
     finish: 'Fertig, wenn alle die Reihenfolge laut bestätigt haben.',
-    reward: 'none',
   },
   {
     id: 'q-sortieren-2',
@@ -112,7 +110,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Bringt Begriffe gemeinsam in eine Rangfolge.',
     task: 'Einigt euch auf eine Rangfolge von fünf Dingen vom Alltäglichsten zum Seltensten (z. B. Regenschirm, Fahrradschlüssel, Briefmarke, Taschenlampe, Gummiente). Jeder darf einmal umstellen.',
     finish: 'Fertig, wenn ihr eine Reihenfolge habt, mit der niemand laut widerspricht.',
-    reward: 'none',
   },
   {
     id: 'q-gedaechtnis-1',
@@ -121,7 +118,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Prüft, wie gut ihr euch den Abend gemerkt habt.',
     task: 'Alle schließen die Augen. Eine Person stellt drei Fragen zu dem, was heute im Raum zu sehen war (Kleidung, Gegenstände, Sitzplätze). Danach wird gemeinsam geprüft.',
     finish: 'Fertig nach drei Fragen.',
-    reward: 'none',
   },
   {
     id: 'q-gedaechtnis-2',
@@ -130,7 +126,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Baut zusammen eine Merkkette auf.',
     task: 'Reihum wiederholt jede Person die bisherige Kette („Ich packe in meinen Korb …“) und fügt einen Gegenstand hinzu. Wer sich verhaspelt, beginnt die nächste Runde.',
     finish: 'Fertig nach zwei Runden oder wenn die Kette zehn Gegenstände hat.',
-    reward: 'role',
   },
   {
     id: 'q-geschick-1',
@@ -139,7 +134,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Haltet etwas stabil, während die anderen reden.',
     task: 'Alle stapeln mit dem, was zur Hand ist (Bierdeckel, Münzen, Löffel), einen möglichst hohen Turm, während sie dabei über ihren Tag erzählen. Wessen Turm fällt, erzählt eine Gegenfrage.',
     finish: 'Fertig nach Ablauf der Zeit.',
-    reward: 'none',
   },
   {
     id: 'q-geschick-2',
@@ -148,7 +142,6 @@ export const QUESTS: QuestDef[] = [
     goal: 'Gebt etwas gemeinsam weiter, ohne dass es herunterfällt.',
     task: 'Gebt einen Löffel mit einer Münze reihum, ohne dass die Münze fällt. Während der Weitergabe nennt jede Person eine Eigenschaft der nächsten.',
     finish: 'Fertig, wenn die Münze einmal im Kreis ist.',
-    reward: 'hint',
   },
 ];
 

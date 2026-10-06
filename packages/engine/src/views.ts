@@ -2,10 +2,10 @@
 // die Clients lesen dürfen. Der volle GameState verlässt den Server nie.
 import { councilReadyFlag, livingPlayers } from './engine';
 import type {
+  AbilityChoice,
   Faction,
   GameState,
   Impulse,
-  NightAction,
   PlayerId,
   PrivateNote,
   PublicEvent,
@@ -21,7 +21,7 @@ export interface PublicPlayer {
 }
 
 export interface PublicCouncil {
-  step: 'nomination' | 'defense' | 'voting' | 'showdown' | 'tiebreak' | 'result';
+  step: 'voting' | 'showdown' | 'tiebreak' | 'result';
   endsAt: number;
   candidates: PlayerId[];
   /** Nur Anzahl, nie wer wie gewählt hat. */
@@ -88,15 +88,12 @@ export function publicView(s: GameState): PublicView {
       const c = p.council;
       nightAt = p.nightAt;
       phaseEndsAt = c.endsAt;
-      const cast =
-        c.step === 'nomination'
-          ? Object.keys(c.nominations).filter((id) => s.players[id]?.alive).length
-          : Object.keys(c.votes).filter((id) => s.players[id]?.alive).length;
+      const cast = Object.keys(c.votes).filter((id) => s.players[id]?.alive).length;
       council = {
         step: c.step,
         endsAt: c.endsAt,
         candidates: c.candidates,
-        progress: c.step === 'nomination' || c.step === 'voting' ? { cast, total: living.length } : null,
+        progress: c.step === 'voting' ? { cast, total: living.length } : null,
         revealAt: c.revealAt,
         tally: c.step === 'tiebreak' || c.step === 'result' ? c.tally : null,
         tied: c.step === 'tiebreak' ? c.tied : null,
@@ -166,12 +163,17 @@ export function publicView(s: GameState): PublicView {
 
 // ───────────────────────── Privatsicht ─────────────────────────
 
-export type ActionSpec =
-  | { kind: 'scout'; targets: PlayerId[]; usesLeft: number }
-  | { kind: 'track'; targets: PlayerId[]; groupSize: number; usesLeft: number }
-  | { kind: 'protect'; targets: PlayerId[]; forbidden: PlayerId | null }
-  | { kind: 'alchemist'; targets: PlayerId[]; protectLeft: number; strikeLeft: number }
-  | { kind: 'veil'; usesLeft: number };
+/** Beschreibung einer verfügbaren Nachtfähigkeit für die UI (Wirkung steht in der Rollen-Konfiguration). */
+export interface AbilitySpec {
+  id: string;
+  kind: 'inspect' | 'inspect_group' | 'protect' | 'strike' | 'veil';
+  targets: PlayerId[];
+  /** null = unbegrenzt */
+  usesLeft: number | null;
+  groupSize?: number;
+  forbidden?: PlayerId | null;
+  choice: AbilityChoice | null;
+}
 
 export interface PrivateView {
   schema: 1;
@@ -185,9 +187,8 @@ export interface PrivateView {
   /** Aktuell vorgeschlagenes Rudelziel dieses Spielers und das Zwischenergebnis. */
   packTarget: { mine: PlayerId | null; candidates: PlayerId[]; leading: PlayerId[] } | null;
   notes: PrivateNote[];
-  /** Verfügbare Nachtaktion in der aktuellen Nacht (leer außerhalb der Nacht). */
-  nightAction: ActionSpec | null;
-  currentNightChoice: NightAction | null;
+  /** Verfügbare Nachtfähigkeiten in der aktuellen Nacht (leer außerhalb der Nacht). */
+  abilities: AbilitySpec[];
   sidePending: boolean;
   /** Ausgeschiedener Jäger mit offenem letztem Schuss. */
   lastShot: { open: boolean; targets: PlayerId[]; chosen: PlayerId | null } | null;
@@ -204,38 +205,19 @@ export function privateView(s: GameState, id: PlayerId): PrivateView | null {
   const others = alive.filter((p) => p.id !== id).map((p) => p.id);
   const isPack = me.alive && me.faction === 'pack';
 
-  let nightAction: ActionSpec | null = null;
+  const abilities: AbilitySpec[] = [];
   if (s.phase.kind === 'night' && me.alive) {
-    switch (me.role) {
-      case 'scout':
-        if (me.uses.scout > 0) nightAction = { kind: 'scout', targets: others, usesLeft: me.uses.scout };
-        break;
-      case 'tracker':
-        if (me.uses.tracker > 0)
-          nightAction = {
-            kind: 'track',
-            targets: others,
-            groupSize: Math.min(s.rules.trackGroupSize, others.length),
-            usesLeft: me.uses.tracker,
-          };
-        break;
-      case 'guardian':
-        nightAction = { kind: 'protect', targets: alive.map((p) => p.id), forbidden: me.lastProtected };
-        break;
-      case 'alchemist':
-        if (me.uses.alchemistProtect > 0 || me.uses.alchemistStrike > 0)
-          nightAction = {
-            kind: 'alchemist',
-            targets: alive.map((p) => p.id),
-            protectLeft: me.uses.alchemistProtect,
-            strikeLeft: me.uses.alchemistStrike,
-          };
-        break;
-      case 'shadowwolf':
-        if (me.uses.shadowVeil > 0) nightAction = { kind: 'veil', usesLeft: me.uses.shadowVeil };
-        break;
-      default:
-        break;
+    for (const a of s.rules.roles[me.role].abilities) {
+      if (a.kind === 'last_shot' || (me.uses[a.id] ?? 0) <= 0) continue;
+      abilities.push({
+        id: a.id,
+        kind: a.kind,
+        targets: a.kind === 'protect' && a.allowSelf !== false ? alive.map((p) => p.id) : others,
+        usesLeft: a.uses === null ? null : (me.uses[a.id] ?? 0),
+        groupSize: a.kind === 'inspect_group' ? Math.min(a.groupSize ?? 3, others.length) : undefined,
+        forbidden: a.noRepeatTarget ? (me.lastTarget[a.id] ?? null) : undefined,
+        choice: s.nightActions[id]?.[a.id] ?? null,
+      });
     }
   }
 
@@ -265,7 +247,7 @@ export function privateView(s: GameState, id: PlayerId): PrivateView | null {
   let myBallot: PlayerId | null = null;
   if (phase.kind === 'speaker_election') myBallot = phase.votes[id] ?? null;
   if (phase.kind === 'council') {
-    myBallot = (phase.council.step === 'nomination' ? phase.council.nominations[id] : phase.council.votes[id]) ?? null;
+    myBallot = phase.council.votes[id] ?? null;
   }
 
   return {
@@ -282,8 +264,7 @@ export function privateView(s: GameState, id: PlayerId): PrivateView | null {
     hasPackChannel: isPack,
     packTarget,
     notes: s.notes[id] ?? [],
-    nightAction,
-    currentNightChoice: s.nightActions[id] ?? null,
+    abilities,
     sidePending: me.alive && me.sidePending,
     lastShot,
     readyCouncil: s.readyCouncil.includes(id),

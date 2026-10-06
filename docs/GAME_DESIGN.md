@@ -1,5 +1,5 @@
 # DAS DORF – GAME DESIGN
-**Version 0.3 – kompakte Source of Truth**
+**Version 0.4 – kompakte Source of Truth** (Änderungen ggü. 0.3: Dorfrat ohne Nominierung, Quest-Belohnungen, Grenzgänger, konfigurierbare Sonderrollen, Rollen-Direktor ohne Ausgleichslogik, Rollen-Timing, Nacht-Timing, Rudelgröße)
 
 ## 1. Kernidee
 Werwolf/Social Deduction als echtes Multiplayer-Spiel ohne separaten Spielleiter.
@@ -65,13 +65,12 @@ Keine geheimen Informationen, keine notwendige Interaktion, keine Werbung währe
 Ein offiziell gestarteter Dorfrat endet **immer mit genau einer Verbannung**.
 
 Ablauf:
-1. Diskussion
-2. Kandidaten / Verteidigung
-3. Jeder lebende Spieler wählt verbindlich in der App.
-4. Wenn alle Stimmen gesperrt sind, zeigen alle gleichzeitig im Raum auf ihre gewählte Person.
-5. Die App/iPad inszeniert: `3 – 2 – 1 – ZEIGT!`
-6. Danach wird das digitale Ergebnis gezeigt.
-7. Gewählter Spieler scheidet sofort aus.
+1. Diskussion im Raum
+2. **Keine Nominierungsphase.** Jeder lebende Spieler wählt verbindlich in der App direkt jeden anderen wählbaren lebenden Spieler (nicht sich selbst).
+3. Wenn alle Stimmen gesperrt sind, zeigen alle gleichzeitig im Raum auf ihre gewählte Person.
+4. Die App/iPad inszeniert: `3 – 2 – 1 – ZEIGT!`
+5. Erst danach wird das digitale Ergebnis gezeigt.
+6. Gewählter Spieler scheidet sofort aus.
 
 Die digitale Stimme verhindert nachträgliches Anpassen an das sichtbare Zeigen.
 
@@ -96,6 +95,7 @@ Einmal gestartet: kein Abbruch.
 In der Nacht handeln Rudel und aktuell aktive Sonderrollen.
 
 ### Rudel
+- Die Rudelgröße je Spielerzahl ist **kein finaler Wert**; sie ist zentral konfigurierbar und wird per Simulation und Playtests balanciert (Spielerzahl × Wolfszahl × Sonderrollen).
 - lebende Wölfe kennen einander
 - eigener unsichtbarer Rudelchat
 - Ziel kann während des Tages vorbereitet und geändert werden
@@ -103,6 +103,9 @@ In der Nacht handeln Rudel und aktuell aktive Sonderrollen.
 - ausgeschiedene Wölfe verlieren sofort alle Rudelrechte
 
 Wird das vorbereitete Ziel vorher verbannt, muss das Rudel neu wählen.
+
+### Nacht-Timing (Timing-Schutz)
+Keine Rolle und keine Aktion darf durch unterschiedlich lange Wartezeiten, Push-Timing oder Haptik erkennbar werden: Die Nacht hat eine für alle gleiche, feste Länge (kein vorzeitiges Ende, wenn „alle Handelnden fertig" sind), Zeitfenster für letzte Aktionen sind für alle gleich lang, Push-Texte/-Zeitpunkte und Haptik sind für alle identisch.
 
 ## 10. Private Kommunikation
 Jeder lebende Spieler kann lebende Spieler privat anschreiben.
@@ -157,31 +160,32 @@ Eine Partie kann:
 Dadurch wissen erfahrene Spieler nie sicher, welche Fähigkeiten gerade existieren.
 
 ### Rollen dürfen zu unterschiedlichen Zeitpunkten entstehen
-Beispiele:
+Rollen können bei Spielstart oder später entstehen. Manche Rollen sind **ausschließlich Startrollen**. Spätere Freischaltungen sind an **vorher definierte** Ereignisse, Quests oder Phasen gekoppelt, z. B.:
 - direkt beim Start
-- nach einer Quest
+- nach einer ausdrücklich dafür konfigurierten Quest (bei erfolgreicher Erfüllung)
 - nach dem ersten Dorfrat
-- zu einem passenden dramaturgischen Zeitpunkt
+- zu einem vorab definierten Tagesbeginn
 
 Alle erhalten gleichzeitig einen neutralen Dorfimpuls. Nur der ausgewählte Spieler sieht die geheime Rolleninformation.
 
-## 14. Rollen-Direktor / Balance
-Zufall ja, aber **gewichteter Zufall mit Guardrails**.
+**Der Impuls verrät nie, ob tatsächlich eine Rolle vergeben wurde:** Er erscheint bei jedem vorab definierten Rollen-Moment, unabhängig davon, ob dabei eine Rolle vergeben wird (Moment und Vergabe sind getrennte, konfigurierbare Wahrscheinlichkeiten).
 
-Die Engine berücksichtigt:
-- Spielerzahl
-- Zahl lebender Wölfe
-- Zahl lebender Dorfbewohner
-- bereits aktive Sonderrollen
-- Informationsvorteil des Dorfs
-- bisherigen Partieverlauf
-- verbleibende Zeit
+## 14. Rollen-Direktor / Balance
+Zufall ja – aber **gewichteter Zufall innerhalb vorab erlaubter Rollen-Pools, Kombinationen und Freischaltzeitpunkte**.
+
+**Kein verstecktes Dynamic Difficulty Balancing:** Die Engine vergibt nie spontan eine starke Gegenrolle, nur um eine Partie auszugleichen. Die aktuelle Stärke einer Partei (Zahl lebender Wölfe/Dorfbewohner, Informationsvorteil, Partieverlauf) fließt in keine Rollenentscheidung ein. Spieler sollen nicht das Gefühl bekommen, dass das System das Ergebnis korrigiert.
+
+Vorab konfiguriert werden (alles datengetrieben, siehe `packages/engine/src/rules.ts`):
+- welche Rollen aktiviert sind, ihr Gewicht (Häufigkeit) und die Mindestspielerzahl
+- ob eine Rolle nur Startrolle ist bzw. zu welchen Auslösern/ab welchem Tag sie freigeschaltet werden darf
+- erlaubte Kombinationen (z. B. höchstens eine Rolle aus einer Gruppe starker Informationsrollen)
+- Anzahl Sonderrollen beim Start und Obergrenze für spätere Vergabe je Gruppengröße
+- die Rudelgröße je Spielerzahl
 
 Regeln:
-- starke Informationsrollen nicht stapeln
-- keine Rolle vergeben, die eine bereits fast entschiedene Partie unnötig kippt
+- jede Sonderrolle höchstens einmal pro Partie
 - in kleinen Gruppen weniger Sonderrollen
-- im Finale keine komplexe neue Rolle mehr einführen
+- im Finale (konfigurierbare Zahl lebender Spieler) keine neue Rolle mehr einführen
 - Rollen mit Fraktionswahl nur zu Spielbeginn
 
 Richtwert:
@@ -189,9 +193,11 @@ Richtwert:
 - 8–10 Spieler: 0–2 zu Beginn, 1–2 weitere möglich
 - 11–14 Spieler: 1–2 zu Beginn, 1–3 weitere möglich
 
-Diese Werte sind Startwerte und werden durch Playtests angepasst.
+Diese Werte sind Startwerte und werden durch Simulation und Playtests angepasst.
 
 ## 15. MVP-Rollenpool – eigene Bezeichnungen und Texte
+
+> **Die folgenden Beschreibungen sind keine final balancierten Mechaniken.** Wirkung, Nutzungszahl, Häufigkeit und Aktivierung jeder Sonderrolle sind konfigurierbar (Startwerte in `rules.ts`) und werden gemeinsam entschieden. Offene Fähigkeiten werden nicht eigenmächtig als Produktregel festgeschrieben.
 
 ### Dorfbewohner
 Keine Sonderfähigkeit.
@@ -216,7 +222,7 @@ Kann nachts einen Spieler schützen. Dieselbe Person darf nicht dauerhaft gesch�
 
 ### Grenzgänger
 **Nur beim Spielstart.** Entscheidet geheim, ob er dem Dorf oder dem Rudel angehören möchte.  
-Bei Wahl des Rudels erhält er anschließend Rudelrechte.  
+Entscheidet er sich für das Rudel, ist er anschließend **vollständig Mitglied des Rudels**: Er erhält dessen Berechtigungen (Kenntnis der Wölfe, Rudelkanal, Rudelziel) und zählt für die Siegbedingung als Wolf.  
 Mechanik bewusst eigenständig formulieren und gestalten.
 
 ### Jäger
@@ -267,8 +273,7 @@ Geeignete Kategorien:
 
 Wölfe spielen normal mit und können subtil sabotieren.
 
-Nicht jede Quest braucht eine Belohnung.  
-Manche besonderen Quests können Hinweis oder neue Sonderrolle freischalten.
+**Belohnungen:** Das bloße Abschließen einer Quest erzeugt keine automatische Belohnung. Die meisten Quests haben gar keine spielmechanische Belohnung. Nur ausdrücklich dafür konfigurierte Quests können bei **erfolgreicher Erfüllung** einen Hinweis, ein Ereignis oder eine neue Sonderrolle auslösen. Was als „erfolgreich" gilt, ist je Quest definiert (aktueller Startwert: alle Lebenden bestätigen die Erfüllung vor Ablauf der Zeit).
 
 ## 19. Überschneidungen
 Nie zwei verbindliche Aktionen gleichzeitig.

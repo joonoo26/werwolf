@@ -5,7 +5,7 @@ import type { PlayerRow, RoomFixture, RoomRow } from '../lib/room';
 const NAMES = ['Lena', 'Tom', 'Mara', 'Jonas', 'Elif', 'David', 'Samira', 'Noah', 'Klara', 'Felix'];
 const T0 = 1_800_000_000_000;
 
-export type Scene = 'day' | 'speaker' | 'nomination' | 'voting' | 'showdown' | 'result' | 'night' | 'morning' | 'ended';
+export type Scene = 'day' | 'speaker' | 'voting' | 'showdown' | 'result' | 'night' | 'morning' | 'ended';
 
 export function buildScene(scene: Scene): { fixture: RoomFixture; me: PlayerRow; priv: ReturnType<typeof privateView>; now: number } {
   const roster = NAMES.map((name, i) => ({ id: `p${i + 1}`, name }));
@@ -24,13 +24,9 @@ export function buildScene(scene: Scene): { fixture: RoomFixture; me: PlayerRow;
     for (const p of roster) step(p.id, { type: 'ready', topic: 'council', value: true });
     step('p2', { type: 'start_council' });
   };
-  if (['nomination', 'voting', 'showdown', 'result'].includes(scene)) {
+  if (['voting', 'showdown', 'result'].includes(scene)) {
     s = tick(s, now, { force: true }); // evtl. Quest abschließen
     toCouncil();
-  }
-  if (['voting', 'showdown', 'result'].includes(scene)) {
-    s = tick(s, now, { force: true });
-    s = tick(s, now, { force: true });
   }
   if (scene === 'showdown' || scene === 'result') {
     for (const p of roster) if (s.phase.kind === 'council') step(p.id, { type: 'vote', target: p.id === 'p5' ? 'p4' : 'p5' });

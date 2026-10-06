@@ -1,4 +1,5 @@
-import { applyCommand, createGame, livingPlayers, nextDeadline, tick } from '../src/engine';
+import { applyCommand, createGame, initialUses, livingPlayers, nextDeadline, tick } from '../src/engine';
+import { privateView } from '../src/views';
 import { Rng, seedToState } from '../src/rng';
 import type { Command, GameState, Mode, PlayerId, RoleId, Rules, DeepPartial } from '../src/types';
 
@@ -41,14 +42,9 @@ export function withRoles(s: GameState, roles: Record<PlayerId, RoleId>): GameSt
   for (const p of Object.values(c.players)) {
     const role = roles[p.id] ?? 'villager';
     p.role = role;
-    p.faction = role === 'wolf' || role === 'shadowwolf' ? 'pack' : 'village';
-    p.uses = {
-      scout: role === 'scout' ? c.rules.scoutUses : 0,
-      tracker: role === 'tracker' ? c.rules.trackerUses : 0,
-      alchemistProtect: role === 'alchemist' ? 1 : 0,
-      alchemistStrike: role === 'alchemist' ? 1 : 0,
-      shadowVeil: role === 'shadowwolf' ? 1 : 0,
-    };
+    p.faction = c.rules.roles[role].faction;
+    p.uses = initialUses(role, c.rules);
+    p.lastTarget = {};
     p.sidePending = role === 'borderwalker';
   }
   return c;
@@ -124,7 +120,6 @@ export function simulate(
       if (rng.chance(0.5)) act(rng.pick(living), { type: 'start_council' });
     } else if (phase.kind === 'council') {
       const c = phase.council;
-      if (c.step === 'nomination') for (const id of living) if (rng.chance(0.8)) act(id, { type: 'nominate', target: pickOther(id) });
       if (c.step === 'voting')
         for (const id of living) {
           const pool = c.candidates.filter((x) => x !== id);
@@ -142,13 +137,11 @@ export function simulate(
           const targets = alive(s).filter((p) => p.faction !== 'pack').map((p) => p.id);
           if (targets.length) act(id, { type: 'pack_target', target: rng.pick(targets) });
         }
-        switch (me.role) {
-          case 'scout': act(id, { type: 'night_action', action: { kind: 'scout', target: rng.pick(others) } }); break;
-          case 'tracker': act(id, { type: 'night_action', action: { kind: 'track', targets: rng.shuffle(others).slice(0, Math.min(s.rules.trackGroupSize, others.length)) } }); break;
-          case 'guardian': act(id, { type: 'night_action', action: { kind: 'protect', target: rng.pick(living) } }); break;
-          case 'alchemist': act(id, { type: 'night_action', action: { kind: 'alchemist', protect: rng.chance(0.5) ? rng.pick(living) : undefined, strike: rng.chance(0.3) ? rng.pick(others) : undefined } }); break;
-          case 'shadowwolf': if (rng.chance(0.5)) act(id, { type: 'night_action', action: { kind: 'veil' } }); break;
-          default: break;
+        for (const spec of privateView(s, id)?.abilities ?? []) {
+          if (!rng.chance(0.8)) continue;
+          if (spec.kind === 'inspect_group') act(id, { type: 'night_action', ability: spec.id, targets: rng.shuffle(spec.targets).slice(0, spec.groupSize) });
+          else if (spec.kind === 'veil') act(id, { type: 'night_action', ability: spec.id });
+          else act(id, { type: 'night_action', ability: spec.id, target: rng.pick(spec.targets.filter((x) => x !== spec.forbidden)) });
         }
       }
     } else if (phase.kind === 'morning') {

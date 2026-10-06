@@ -1,123 +1,72 @@
-// Rollen-Direktor: gewichteter Zufall mit Guardrails (GAME_DESIGN §13/§14).
+// Rollen-Direktor: gewichteter Zufall INNERHALB vorab konfigurierter Pools, Kombinationen und
+// Freischaltzeitpunkte (Rules.roles[*].unlock, comboLimits, startSpecials, maxLaterSpecials).
+// Bewusst KEIN Dynamic Difficulty Balancing: Die aktuelle Stärke einer Partei fließt nirgends ein.
 import { Rng } from './rng';
-import {
-  ROLES,
-  SPECIAL_ROLES,
-  sizeBand,
-  startSpecialDistribution,
-  wolfCount,
-} from './rules';
-import type { GameState, PlayerId, RoleId, Rules } from './types';
-
-export type DirectorTrigger = 'start' | 'quest_reward' | 'after_first_council' | 'day_start';
+import { sizeBand, wolfCount } from './rules';
+import type { GameState, PlayerId, RoleDef, RoleId, Rules, Trigger } from './types';
 
 export interface Assignment {
   playerId: PlayerId;
   role: RoleId;
 }
 
-function living(state: GameState) {
-  return Object.values(state.players).filter((p) => p.alive);
+const living = (s: GameState) => Object.values(s.players).filter((p) => p.alive);
+
+/** Anzahl vergebener Sonderrollen (auch ausgeschiedener Träger). */
+export function specialsGiven(s: GameState): number {
+  return Object.values(s.players).filter((p) => s.rules.roles[p.role].special).length;
 }
 
-/** Bereits vergebene (auch ausgeschiedene) Rollen – jede Sonderrolle existiert höchstens einmal. */
-function roleTaken(state: GameState, role: RoleId): boolean {
-  return Object.values(state.players).some((p) => p.role === role);
+function roleTaken(s: GameState, role: RoleId): boolean {
+  return Object.values(s.players).some((p) => p.role === role);
 }
 
-function activeInfoWeight(state: GameState, rules: Rules): { used: number; budget: number } {
-  const used = living(state).reduce((sum, p) => sum + ROLES[p.role].infoWeight, 0);
-  return { used, budget: rules.infoBudget[sizeBand(Object.keys(state.players).length)] };
-}
-
-/** Wie viele Sonderrollen wurden insgesamt schon vergeben (Start + später)? */
-export function specialsGiven(state: GameState): number {
-  return Object.values(state.players).filter((p) => ROLES[p.role].special).length;
-}
-
-export interface EligibleContext {
-  /** Beim Start existiert der Zustand noch nicht vollständig. */
-  isStart: boolean;
-  /** Beim Start bereits ausgewählte Rollen (für Budget-/Einzigartigkeitsprüfungen). */
-  chosen?: RoleId[];
-  playerCount: number;
-  aliveCount: number;
-  packAlive: number;
-}
-
-/** Prüft die Guardrails für eine Rolle (ohne Zufall). */
-export function isRoleEligible(
-  role: RoleId,
-  ctx: EligibleContext,
-  state: GameState | null,
+/** Statische Prüfung, ob eine Rolle in diesem Kontext vergeben werden darf (ohne Zufall, ohne Stärkevergleich). */
+export function isRoleAllowed(
+  def: RoleDef,
+  ctx: { trigger: Trigger; day: number; playerCount: number; assigned: RoleId[]; aliveCount: number },
   rules: Rules,
 ): boolean {
-  const meta = ROLES[role];
-  if (!meta.special) return false;
-  if (ctx.playerCount < rules.roleMinPlayers[role]) return false;
-  if (!ctx.isStart && meta.startOnly) return false;
-  if (ctx.chosen?.includes(role)) return false;
-  if (state && roleTaken(state, role)) return false;
-
-  // Im Finale keine neue Rolle mehr einführen.
-  if (!ctx.isStart && ctx.aliveCount <= rules.finaleAlive) return false;
-
-  // Starke Informationsrollen nicht stapeln.
-  if (meta.infoWeight > 0) {
-    const existing = state ? activeInfoWeight(state, rules).used : 0;
-    const chosen = (ctx.chosen ?? []).reduce((s, r) => s + ROLES[r].infoWeight, 0);
-    const budget = rules.infoBudget[sizeBand(ctx.playerCount)];
-    if (existing + chosen + meta.infoWeight > budget) return false;
-  }
-
-  if (!ctx.isStart) {
-    const others = ctx.aliveCount - ctx.packAlive;
-    const balance = others > 0 ? ctx.packAlive / others : 1;
-    // Fast entschiedene Partie nicht unnötig kippen.
-    if (meta.faction === 'pack' && balance >= 0.6) return false;
-    if (meta.faction === 'village' && balance <= 0.25) return false;
-    if (ctx.packAlive >= others) return false;
+  if (!def.special || !def.enabled || def.weight <= 0) return false;
+  if (ctx.assigned.includes(def.id)) return false; // jede Sonderrolle höchstens einmal
+  if (ctx.playerCount < def.minPlayers) return false;
+  if (def.maxPlayers !== null && ctx.playerCount > def.maxPlayers) return false;
+  if (!def.unlock.triggers.includes(ctx.trigger)) return false;
+  if (ctx.day < def.unlock.earliestDay) return false;
+  if (def.unlock.latestDay !== null && ctx.day > def.unlock.latestDay) return false;
+  if (ctx.trigger !== 'start' && rules.finaleAlive > 0 && ctx.aliveCount <= rules.finaleAlive) return false;
+  const band = sizeBand(ctx.playerCount);
+  for (const combo of rules.comboLimits) {
+    if (!combo.roles.includes(def.id)) continue;
+    const have = ctx.assigned.filter((r) => combo.roles.includes(r)).length;
+    if (have + 1 > combo.max[band]) return false;
   }
   return true;
 }
 
-function recipientsFor(state: GameState, role: RoleId): PlayerId[] {
-  const wantRole: RoleId = ROLES[role].faction === 'pack' ? 'wolf' : 'villager';
-  return living(state)
-    .filter((p) => p.role === wantRole)
-    .map((p) => p.id);
+function recipients(s: GameState, def: RoleDef): PlayerId[] {
+  const want: RoleId = def.recipient === 'wolf' ? 'wolf' : 'villager';
+  return living(s).filter((p) => p.role === want).map((p) => p.id);
 }
 
 /**
- * Zusätzliche Rolle zu einem dramaturgischen Zeitpunkt. Gibt null zurück, wenn
- * Guardrails oder Zufall dagegensprechen.
+ * Versucht, später im Spiel eine Rolle zu vergeben. Der Aufrufer (Engine) hat den öffentlichen
+ * Impuls bereits unabhängig vom Ergebnis ausgelöst – das Ergebnis bleibt unsichtbar.
  */
-export function maybeSpawnRole(
-  state: GameState,
-  trigger: DirectorTrigger,
-  rng: Rng,
-): Assignment | null {
-  const { rules } = state;
-  const playerCount = Object.keys(state.players).length;
+export function pickLateAssignment(s: GameState, trigger: Exclude<Trigger, 'start'>, rng: Rng): Assignment | null {
+  const { rules } = s;
+  const playerCount = Object.keys(s.players).length;
   const band = sizeBand(playerCount);
+  if (specialsGiven(s) - s.startSpecialCount >= rules.maxLaterSpecials[band]) return null;
 
-  const laterGiven = specialsGiven(state) - state.startSpecials;
-  if (laterGiven >= rules.maxLaterSpecials[band]) return null;
-
-  if (trigger === 'day_start' && !rng.chance(rules.laterRoleChanceDayStart)) return null;
-  if (trigger === 'after_first_council' && !rng.chance(rules.laterRoleChanceAfterFirstCouncil)) return null;
-
-  const alive = living(state);
-  const packAlive = alive.filter((p) => p.faction === 'pack').length;
-  const ctx: EligibleContext = { isStart: false, playerCount, aliveCount: alive.length, packAlive };
-
-  const candidates = SPECIAL_ROLES.filter(
-    (r) => isRoleEligible(r, ctx, state, rules) && recipientsFor(state, r).length > 0,
+  const assigned = Object.values(s.players).map((p) => p.role);
+  const ctx = { trigger, day: s.day, playerCount, assigned, aliveCount: living(s).length };
+  const defs = (Object.values(rules.roles) as RoleDef[]).filter(
+    (d) => isRoleAllowed(d, ctx, rules) && !roleTaken(s, d.id) && recipients(s, d).length > 0,
   );
-  const role = rng.weighted(candidates, (r) => rules.roleWeights[r]);
-  if (!role) return null;
-  const recipient = rng.pick(recipientsFor(state, role));
-  return { playerId: recipient, role };
+  const def = rng.weighted(defs, (d) => d.weight);
+  if (!def) return null;
+  return { playerId: rng.pick(recipients(s, def)), role: def.id };
 }
 
 /** Initiale Rollenverteilung (Seed-deterministisch). */
@@ -125,43 +74,33 @@ export function assignStartRoles(
   playerIds: PlayerId[],
   rules: Rules,
   rng: Rng,
-): { assignments: Assignment[]; startSpecials: number } {
+): { assignments: Assignment[]; startSpecialCount: number } {
   const n = playerIds.length;
   const order = rng.shuffle(playerIds);
   const wolves = wolfCount(n, rules);
 
-  const dist = startSpecialDistribution(n);
-  const picked = rng.weighted(dist, (d) => d.weight)!;
+  const dist = rules.startSpecials[sizeBand(n)];
+  const picked = rng.weighted(dist, (d) => d.weight);
   const chosen: RoleId[] = [];
-  let shadowWolf = false;
-
-  for (let i = 0; i < picked.count; i++) {
-    const ctx: EligibleContext = {
-      isStart: true,
-      chosen,
-      playerCount: n,
-      aliveCount: n,
-      packAlive: wolves,
-    };
-    const options = SPECIAL_ROLES.filter((r) => isRoleEligible(r, ctx, null, rules));
-    const role = rng.weighted(options, (r) => rules.roleWeights[r]);
-    if (!role) break;
-    chosen.push(role);
-    if (role === 'shadowwolf') shadowWolf = true;
+  for (let i = 0; i < (picked?.count ?? 0); i++) {
+    const options = (Object.values(rules.roles) as RoleDef[]).filter((d) =>
+      isRoleAllowed(d, { trigger: 'start', day: 1, playerCount: n, assigned: chosen, aliveCount: n }, rules),
+    );
+    const def = rng.weighted(options, (d) => d.weight);
+    if (!def) break;
+    chosen.push(def.id);
   }
 
   const assignments: Assignment[] = [];
   let cursor = 0;
+  const packRoles = chosen.filter((r) => rules.roles[r].faction === 'pack');
+  // Rudelrollen ersetzen einen der Wölfe; die übrigen Wölfe bleiben einfache Wölfe.
   for (let i = 0; i < wolves; i++) {
-    const id = order[cursor++]!;
-    assignments.push({ playerId: id, role: i === 0 && shadowWolf ? 'shadowwolf' : 'wolf' });
+    assignments.push({ playerId: order[cursor++]!, role: packRoles[i] ?? 'wolf' });
   }
-  for (const role of chosen) {
-    if (role === 'shadowwolf') continue;
-    assignments.push({ playerId: order[cursor++]!, role });
+  for (const r of chosen.filter((x) => rules.roles[x].faction !== 'pack')) {
+    assignments.push({ playerId: order[cursor++]!, role: r });
   }
   while (cursor < order.length) assignments.push({ playerId: order[cursor++]!, role: 'villager' });
-
-  const startSpecials = chosen.length;
-  return { assignments, startSpecials };
+  return { assignments, startSpecialCount: chosen.length };
 }

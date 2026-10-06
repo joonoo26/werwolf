@@ -1,11 +1,12 @@
 export * from './types';
 export { Rng, seedToState } from './rng';
-export { DEFAULT_RULES, mergeRules, ROLES, SPECIAL_ROLES, sizeBand, wolfCount, startSpecialDistribution } from './rules';
-export type { RoleMeta } from './rules';
-export { createGame, applyCommand, tick, nextDeadline, checkWin, livingPlayers, councilReadyFlag } from './engine';
+export { DEFAULT_RULES, mergeRules, ROLE_IDS, SPECIAL_ROLE_IDS, sizeBand, wolfCount } from './rules';
+export { createGame, initialUses, applyCommand, tick, nextDeadline, checkWin, livingPlayers, councilReadyFlag } from './engine';
 export { publicView, privateView, packChannelMembers } from './views';
-export type { PublicView, PrivateView, PublicPlayer, PublicCouncil, ActionSpec } from './views';
+export type { PublicView, PrivateView, PublicPlayer, PublicCouncil, AbilitySpec } from './views';
 export { planDay, roundsLeft } from './schedule';
 export { QUESTS, IMPULSES, HINT_IMPULSE_KEYS, NEUTRAL_CHANGE_IMPULSE } from './content';
 export type { QuestDef, QuestCategory } from './content';
-export { maybeSpawnRole, assignStartRoles, isRoleEligible } from './director';
+export { pickLateAssignment, assignStartRoles, isRoleAllowed } from './director';
+export { describeBalance, describeAbility } from './tables';
+export type { BalanceRow } from './tables';
