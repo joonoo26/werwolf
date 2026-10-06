@@ -61,7 +61,7 @@ npx expo run:ios            # baut lokal mit Xcode und startet den Simulator
 Alternativ in der Cloud: `npx eas login`, `npx eas init`, `npx eas build --profile development --platform ios`, danach `npx expo start --dev-client`.
 
 ## 8. Ersten Testlauf spielen
-Mindestens **6 Spieler** nötig. Möglichkeiten:
+Mindestens **4 Spieler** nötig (4–14 unterstützt). Möglichkeiten:
 - Mehrere Simulatoren (iPhone + iPad) plus echte Geräte/Freunde, jeweils mit demselben Development Build.
 - Gerät 1: **Neues Spiel** → Name, PIN, Modus → Raumcode/QR erscheint.
 - Weitere Geräte: **Spiel beitreten** → Code eingeben oder QR scannen → Name + PIN → **Bereit**.

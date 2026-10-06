@@ -9,12 +9,13 @@ import { alive, electSpeaker, forceNight, must, newGame, roster, T0, withRoles }
 
 describe('Konfigurierte Startwerte (Entscheidung v0.4+)', () => {
   it('Rudelgröße je Spielerzahl', () => {
-    const expected: Record<number, number> = { 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 };
+    const expected: Record<number, number> = { 4: 1, 5: 1, 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 };
     for (const [n, w] of Object.entries(expected)) expect(wolfCount(Number(n), DEFAULT_RULES)).toBe(w);
   });
   it('Fährtenleser hat 2 Nutzungen; Jäger ist standardmäßig deaktiviert; Schattenwolf erst ab 9', () => {
     expect(DEFAULT_RULES.roles.tracker.abilities[0]!.uses).toBe(2);
     expect(DEFAULT_RULES.roles.hunter.enabled).toBe(false);
+    expect(DEFAULT_RULES.roles.borderwalker.enabled).toBe(false); // vollständig implementiert, standardmäßig aus
     expect(DEFAULT_RULES.roles.shadowwolf.minPlayers).toBe(9);
     for (let i = 0; i < 300; i++) {
       const s = newGame(6 + (i % 9), 'dflt' + i);
@@ -33,8 +34,8 @@ describe('Konfigurierte Startwerte (Entscheidung v0.4+)', () => {
   it('Späher + Fährtenleser nie gemeinsam bei 6–10 Spielern; ab 11 erlaubt', () => {
     let together11 = false;
     for (let i = 0; i < 1500; i++) {
-      const n = 6 + (i % 9);
-      const s = newGame(n, 'combo' + i, { rules: { startSpecials: { small: [{ count: 1, weight: 1 }], medium: [{ count: 2, weight: 1 }], large: [{ count: 2, weight: 1 }] } } as never });
+      const n = 4 + (i % 11);
+      const s = newGame(n, 'combo' + i, { rules: { startSpecials: { tiny: [{ count: 1, weight: 1 }], small: [{ count: 1, weight: 1 }], medium: [{ count: 2, weight: 1 }], large: [{ count: 2, weight: 1 }] } } as never });
       const roles = Object.values(s.players).map((p) => p.role);
       const both = roles.includes('scout') && roles.includes('tracker');
       if (n <= 10) expect(both).toBe(false);
@@ -88,7 +89,7 @@ describe('Grenzgänger und Rudelstärke', () => {
   const only = (flag: boolean) => ({
     borderwalkerReplacesWolf: flag,
     startSpecials: { medium: [{ count: 1, weight: 1 }], large: [{ count: 1, weight: 1 }] },
-    roles: Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'hunter', 'shadowwolf'].map((r) => [r, { enabled: false }])),
+    roles: { ...Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'hunter', 'shadowwolf'].map((r) => [r, { enabled: false }])), borderwalker: { enabled: true } },
   });
   it('ersetzt einen Wolf-Platz: maximale Rudelgröße bleibt die der Tabelle', () => {
     for (const n of [8, 9, 10, 12, 14]) {
@@ -166,5 +167,45 @@ describe('Abendmodus: Engine führt, bricht die Diskussion aber nie abrupt ab', 
     s = must(s, 'p6', { type: 'start_vote' }, T0 + 4);
     expect(s.phase.kind === 'council' && s.phase.council.step).toBe('voting');
     expect(alive(s)).toHaveLength(9);
+  });
+});
+
+describe('Kleingruppen 4–6 (Balance offen, konfigurierbar)', () => {
+  it('4 und 5 Spieler sind spielbar (1 Wolf) und haben standardmäßig keine Sonderrolle', () => {
+    for (const n of [4, 5]) {
+      for (let i = 0; i < 50; i++) {
+        const s = newGame(n, `tiny${n}-${i}`);
+        expect(Object.keys(s.players)).toHaveLength(n);
+        expect(Object.values(s.players).filter((p) => p.faction === 'pack')).toHaveLength(1);
+        expect(Object.values(s.players).filter((p) => DEFAULT_RULES.roles[p.role].special)).toHaveLength(0);
+      }
+    }
+  });
+  it('Kill-Frequenz ist je Spielerzahl konfigurierbar (Standard: jede Nacht), ohne neue Sonderregel', () => {
+    const night = (rules?: object) => {
+      let s = withRoles(newGame(5, 'kill', { rules: rules as never }), { p1: 'wolf' });
+      s = electSpeaker(s, T0 + 1, 'p2');
+      s = forceNight(s);
+      s = must(s, 'p1', { type: 'pack_target', target: 'p3' }, T0 + 5_000_000);
+      return tick(s, T0 + 9_000_000);
+    };
+    expect(night().players.p3!.alive).toBe(false);
+    expect(night({ nightKillInterval: { 5: 2 } }).players.p3!.alive).toBe(false); // Nacht 1 tötet
+    // Nacht 2 mit Intervall 2: kein Kill
+    let s = withRoles(newGame(5, 'kill2', { rules: { nightKillInterval: { 5: 2 } } as never }), { p1: 'wolf' });
+    s = electSpeaker(s, T0 + 1, 'p2');
+    s = JSON.parse(JSON.stringify(s)) as GameState;
+    s.day = 2;
+    s = forceNight(s);
+    s = must(s, 'p1', { type: 'pack_target', target: 'p3' }, T0 + 5_000_000);
+    s = tick(s, T0 + 9_000_000);
+    expect(s.players.p3!.alive).toBe(true);
+    expect(publicView(s).morningDeaths).toEqual([]);
+  });
+  it('Rollenpool und Informationsmechanik lassen sich für Kleingruppen separat konfigurieren', () => {
+    const rules = { roles: { scout: { minPlayers: 4 } }, startSpecials: { tiny: [{ count: 1, weight: 1 }] } };
+    const seen = new Set<string>();
+    for (let i = 0; i < 40; i++) for (const p of Object.values(newGame(4, 'cfg' + i, { rules: rules as never }).players)) seen.add(p.role);
+    expect(seen.has('scout') || seen.has('tracker')).toBe(true);
   });
 });

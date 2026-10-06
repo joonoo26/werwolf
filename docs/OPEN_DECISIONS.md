@@ -5,12 +5,16 @@ aber einige **Lücken**, die für eine lauffähige Engine geschlossen werden mus
 `packages/engine/src/rules.ts` (Startwerte für Playtests); Interpretationen sind hier gesammelt und sollen im
 Playtest bestätigt oder geändert werden. Nichts davon wurde stillschweigend als „Regel" festgeschrieben.
 
-## Entschieden (in GAME_DESIGN.md v0.5 festgeschrieben)
+## Entschieden (in GAME_DESIGN.md v0.6 festgeschrieben)
+- **Spielerzahl 4–14.** Rudel: 4→1, 5→1, 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4. **Kleingruppen 4–6**: Balance offen; Kill-Frequenz (`nightKillInterval`, Standard jede Nacht), Rollenpool und Informationsmechaniken je Spielerzahl konfigurierbar (eigenes Größenband `tiny`); keine neue Sonderregel. Bei 4–5 Spielern sind aktuell keine Sonderrollen erlaubt (Mindestspielerzahl der Rollen ≥ 6).
+- **Grenzgänger standardmäßig deaktiviert**, vollständig implementiert und konfigurierbar (inkl. `borderwalkerReplacesWolf`); wird später separat getestet.
+- **Balancing ist vorerst abgeschlossen.** Die Bot-Simulation (`docs/balance/`) ist nur ein technischer Baseline-Test; die Bots haben kaum Deduktion, die absoluten Siegquoten sind kein Balancing-Ergebnis. Keine Anpassung aufgrund der Simulationsergebnisse.
+
 - **Dorfrat**: freie reale Diskussion → Gruppe eröffnet die digitale Abstimmung bewusst → jeder wählt direkt jeden anderen Lebenden → alle Stimmen gesperrt → 3‑2‑1‑ZEIGT! → erst dann das Ergebnis → Gleichstand entscheidet der Dorfsprecher. **Keine Nominierung, keine Verteidigungsphase, kein hartes Zeitlimit** (weder Diskussion noch Abstimmung). Ein ausgefallenes Gerät blockiert nie (Mehrheit + 60 s Karenz oder Host-Notfall). Immer genau eine Verbannung (ohne gültige Stimmen: Zufall).
 - **Abendmodus**: Engine führt zeitlich (Richtwert 8 min, danach 3 min Gnadenfrist, dann automatische Eröffnung der Abstimmung), bricht die Diskussion nie abrupt ab; die Gruppe kann früher per Mehrheit eröffnen.
 - **Quest-Belohnungen**: Abschließen allein belohnt nie; nur ausdrücklich konfigurierte Quests (`q-wissen-1` Hinweis, `q-koordination-1` Rollen-Moment) bei Erfolg (alle Lebenden bestätigen vor Ablauf der Zeit). Ereignis-Belohnungen vorbereitet, ungenutzt.
 - **Grenzgänger** im Rudel = vollständiges Rudelmitglied (Kanal, Ziel, zählt als Wolf). **Rudelstärke**: Er ersetzt einen Wolf-Platz (`borderwalkerReplacesWolf`); Tabellenwert = Maximum, bei Dorfwahl ist das Rudel einen kleiner.
-- **Rudelgröße** (Startwerte, nicht final): 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4.
+- **Rudelgröße** siehe oben (Startwerte, nicht final).
 - **Sonderrollen datengetrieben** (`Rules.roles`). Startwerte: Fährtenleser 2 Nutzungen; Alchemistin nur ein Trank pro Nacht (`maxAbilitiesPerNight: 1`); Jäger technisch vorhanden, **standardmäßig deaktiviert**; Schattenwolf ab 9 Spielern.
 - **Kein Dynamic Difficulty Balancing**: Vergabe nur aus vorab erlaubten Pools/Kombinationen/Freischaltzeitpunkten; Parteistärke fließt nirgends ein (Test).
 - **Regeln**: ≤5 Lebende → keine neuen Sonderrollen; Späher + Fährtenleser nie gemeinsam bei 6–10 Spielern (je Partie gezählt, nicht nur lebende Träger), ab 11 erlaubt; 6 Spieler als Balancefall (1 Wolf, ≤1 Startrolle, ≤1 später, keine Informationskombination).

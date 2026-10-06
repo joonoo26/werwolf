@@ -112,9 +112,10 @@ function role(def) {
 }
 var ab = (a) => a;
 var DEFAULT_RULES = {
-  minPlayers: 6,
+  minPlayers: 4,
   maxPlayers: 14,
-  wolvesByPlayers: { 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  wolvesByPlayers: { 4: 1, 5: 1, 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  nightKillInterval: {},
   borderwalkerReplacesWolf: true,
   roles: {
     villager: role({ id: "villager", faction: "village", special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
@@ -156,6 +157,8 @@ var DEFAULT_RULES = {
       faction: "village",
       weight: 1,
       minPlayers: 8,
+      enabled: false,
+      // vollständig implementiert, standardmäßig deaktiviert (Wirkung wird separat getestet)
       startChoice: true,
       unlock: { triggers: ["start"], earliestDay: 1, latestDay: 1 }
     }),
@@ -177,12 +180,13 @@ var DEFAULT_RULES = {
     })
   },
   startSpecials: {
+    tiny: [{ count: 0, weight: 50 }, { count: 1, weight: 50 }],
     small: [{ count: 0, weight: 50 }, { count: 1, weight: 50 }],
     medium: [{ count: 0, weight: 25 }, { count: 1, weight: 45 }, { count: 2, weight: 30 }],
     large: [{ count: 1, weight: 50 }, { count: 2, weight: 50 }]
   },
-  maxLaterSpecials: { small: 1, medium: 2, large: 3 },
-  comboLimits: [{ roles: ["scout", "tracker"], max: { small: 1, medium: 1, large: 2 } }],
+  maxLaterSpecials: { tiny: 1, small: 1, medium: 2, large: 3 },
+  comboLimits: [{ roles: ["scout", "tracker"], max: { tiny: 1, small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
   moments: {
     quest_reward: { noRoleChance: 0.3 },
@@ -226,6 +230,7 @@ function deepMerge(target, src) {
   return target;
 }
 function sizeBand(playerCount) {
+  if (playerCount <= 6) return "tiny";
   if (playerCount <= 7) return "small";
   if (playerCount <= 10) return "medium";
   return "large";
@@ -924,7 +929,9 @@ function resolveNight(s, ctx) {
     if (c.target) strikeIds.push(c.target);
   });
   const deaths = [];
-  if (target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
+  const interval = Math.max(1, s.rules.nightKillInterval[Object.keys(s.players).length] ?? 1);
+  const killNight = (day - 1) % interval === 0;
+  if (killNight && target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
   for (const t of strikeIds) if (isAlive(s, t) && !deaths.includes(t)) deaths.push(t);
   s.nightActions = {};
   s.packVotes = {};
@@ -1199,7 +1206,9 @@ function execute(s, actorId, cmd, ctx) {
   }
 }
 function applyCommand(state, actor, cmd, now) {
-  const s = JSON.parse(JSON.stringify(state));
+  return applyCommandMut(JSON.parse(JSON.stringify(state)), actor, cmd, now);
+}
+function applyCommandMut(s, actor, cmd, now) {
   const ctx = { now, rng: new Rng(s.rng) };
   try {
     execute(s, actor, cmd, ctx);

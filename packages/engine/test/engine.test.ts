@@ -26,11 +26,11 @@ describe('Rng', () => {
 
 describe('Spielstart', () => {
   it('verweigert zu kleine und zu große Gruppen', () => {
-    expect(() => createGame({ roster: roster(5), hostId: 'p1', mode: 'classic', seed: 's', now: T0 })).toThrow();
+    expect(() => createGame({ roster: roster(3), hostId: 'p1', mode: 'classic', seed: 's', now: T0 })).toThrow();
     expect(() => createGame({ roster: roster(15), hostId: 'p1', mode: 'classic', seed: 's', now: T0 })).toThrow();
   });
   it('verteilt das Rudel gemäß Spielerzahl', () => {
-    for (let n = 6; n <= 14; n++) {
+    for (let n = 4; n <= 14; n++) {
       const s = newGame(n, `n${n}`);
       const pack = Object.values(s.players).filter((p) => p.faction === 'pack');
       const bw = Object.values(s.players).some((p) => p.role === 'borderwalker');
@@ -40,12 +40,13 @@ describe('Spielstart', () => {
   });
   it('vergibt Sonderrollen höchstens einmal und hält die Richtwerte beim Start ein', () => {
     for (let i = 0; i < 300; i++) {
-      const n = 6 + (i % 9);
+      const n = 4 + (i % 11);
       const s = newGame(n, `r${i}`);
       const specials = Object.values(s.players).filter((p) => !['villager', 'wolf'].includes(p.role));
       const roles = specials.map((p) => p.role);
       expect(new Set(roles).size).toBe(roles.length);
       if (n <= 7) expect(specials.length).toBeLessThanOrEqual(1);
+      if (n <= 5) expect(specials.length).toBe(0); // keine Rollen konfiguriert, die dort erlaubt sind
       else if (n <= 10) expect(specials.length).toBeLessThanOrEqual(2);
       else {
         expect(specials.length).toBeGreaterThanOrEqual(1);

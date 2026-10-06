@@ -80,7 +80,8 @@ export interface RoleDef {
   maxAbilitiesPerNight: number | null;
 }
 
-export type SizeBand = 'small' | 'medium' | 'large';
+/** tiny = Kleingruppen 4–6 (Balance offen), small = 7, medium = 8–10, large = 11–14. */
+export type SizeBand = 'tiny' | 'small' | 'medium' | 'large';
 
 export type QuestRewardDef =
   | { kind: 'hint' }
@@ -105,6 +106,11 @@ export interface Rules {
   maxPlayers: number;
   /** Anzahl Rudelmitglieder je Spielerzahl (Startwerte, zentral anpassbar). */
   wolvesByPlayers: Record<number, number>;
+  /**
+   * Kill-Frequenz des Rudels je Spielerzahl: das Rudel tötet nur jede N-te Nacht (Nacht 1, 1+N, …).
+   * Nicht eingetragen = jede Nacht (Standard). Für Kleingruppen später anpassbar; noch keine Sonderregel.
+   */
+  nightKillInterval: Record<number, number>;
   /**
    * Ist ein Grenzgänger im Spiel, ersetzt er einen Wolf-Platz: Die Rudelgröße der Tabelle ist das Maximum
    * (Grenzgänger im Rudel); wählt er das Dorf, ist das Rudel einen kleiner. So entsteht kein unkontrolliert

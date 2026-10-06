@@ -1,5 +1,7 @@
 # DAS DORF – GAME DESIGN
-**Version 0.5 – kompakte Source of Truth** (Änderungen ggü. 0.3: Dorfrat ohne Nominierung/Verteidigung und ohne hartes Zeitlimit, Quest-Belohnungen, Grenzgänger inkl. Rudelstärke, konfigurierbare Sonderrollen, Rollen-Direktor ohne Ausgleichslogik, einfache Rollen-Momente, Nacht-Timing, Startwerte für Rudelgröße und Rollen)
+**Version 0.6 – kompakte Source of Truth** (v0.6: 4–14 Spieler, Kleingruppen 4–6 mit offener Balance, Grenzgänger standardmäßig deaktiviert, Kill-Frequenz konfigurierbar)
+
+**Version 0.5** (Änderungen ggü. 0.3: Dorfrat ohne Nominierung/Verteidigung und ohne hartes Zeitlimit, Quest-Belohnungen, Grenzgänger inkl. Rudelstärke, konfigurierbare Sonderrollen, Rollen-Direktor ohne Ausgleichslogik, einfache Rollen-Momente, Nacht-Timing, Startwerte für Rudelgröße und Rollen)
 
 ## 1. Kernidee
 Werwolf/Social Deduction als echtes Multiplayer-Spiel ohne separaten Spielleiter.
@@ -190,11 +192,17 @@ Regeln (entschieden):
 - in kleinen Gruppen weniger Sonderrollen
 - **Bei höchstens 5 lebenden Spielern werden keine neuen Sonderrollen mehr vergeben.**
 - **Späher + Fährtenleser dürfen bei 6–10 Spielern nicht gemeinsam auftreten; ab 11 Spielern ist das erlaubt.** (Gezählt wird je Partie, nicht nur lebende Träger.)
-- **6 Spieler sind ein besonderer Balancefall:** 1 Wolf, höchstens 1 Sonderrolle beim Start und 1 später, keine starken Informationskombinationen.
+- **4–6 Spieler sind Kleingruppen (Balance offen):** 1 Wolf, höchstens 1 Sonderrolle beim Start und 1 später, keine starken Informationskombinationen (Startwerte).
 - Rollen mit Fraktionswahl nur zu Spielbeginn
 - **Grenzgänger und Rudelstärke:** Ist ein Grenzgänger im Spiel, ersetzt er einen Wolf-Platz. Die Rudelgröße der Tabelle ist das Maximum (Grenzgänger im Rudel); wählt er das Dorf, ist das Rudel einen kleiner. So entsteht kein unkontrolliert zusätzlicher Wolf. (Konfigurierbar, Wirkung wird per Simulation geprüft.)
 
-Rudelgröße (Startwerte, nicht final): 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4.
+**Unterstützte Spielerzahl: 4–14.**
+
+Rudelgröße (Basiskonfiguration, Startwerte, nicht final): 4→1, 5→1, 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4.
+
+**Kleingruppen (4–6 Spieler)** sind ausdrücklich ein eigener Fall; ihre Balance ist **noch offen**. Kill-Frequenz des Rudels, Rollenpool und Informationsmechaniken sind je Spielerzahl konfigurierbar und dürfen später von größeren Gruppen abweichen. Dafür wurde bewusst noch keine neue Sonderregel erfunden (Standard: Rudel tötet jede Nacht, Rollenpool wie in den allgemeinen Regeln; bei 4–5 Spielern sind aktuell keine Sonderrollen erlaubt).
+
+**Grenzgänger: vollständig implementiert und konfigurierbar, standardmäßig deaktiviert** (seine Wirkung ist für eine Standardpartie zu groß und wird später separat getestet).
 
 Richtwert:
 - 6–7 Spieler: 0–1 Sonderrolle zu Beginn, max. 1 weitere

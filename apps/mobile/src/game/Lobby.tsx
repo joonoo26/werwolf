@@ -13,7 +13,7 @@ export function Lobby({ onLeave }: { onLeave: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   if (!room || !me) return <Backdrop><Text style={{ padding: space.xl }}>{t.common.loading}</Text></Backdrop>;
   const isHost = room.host_user_id === userId;
-  const allReady = players.length >= 6 && players.every((p) => p.ready);
+  const allReady = players.length >= 4 && players.every((p) => p.ready);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setErr(null);
     try { await fn(); await refresh(); } catch (e) { setErr(errorText(e, t.errors, t.common.error)); } finally { setBusy(false); }

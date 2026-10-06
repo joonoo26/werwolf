@@ -5,7 +5,7 @@ import { newGame, roster, T0 } from './helpers';
 
 describe('Simulations-Harness', () => {
   it('spielt vollständige Partien aller Größen ohne Fehler und mit konsistentem Ergebnis', () => {
-    for (let n = 6; n <= 14; n++) {
+    for (let n = 4; n <= 14; n++) {
       for (let i = 0; i < 25; i++) {
         const r = simulateGame({ n, seed: `t${n}-${i}` });
         expect(['village', 'pack']).toContain(r.winner);

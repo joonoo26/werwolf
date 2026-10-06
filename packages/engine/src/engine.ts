@@ -586,7 +586,10 @@ function resolveNight(s: GameState, ctx: Ctx): void {
   });
 
   const deaths: PlayerId[] = [];
-  if (target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
+  // Kill-Frequenz je Spielerzahl konfigurierbar (Standard: jede Nacht).
+  const interval = Math.max(1, s.rules.nightKillInterval[Object.keys(s.players).length] ?? 1);
+  const killNight = (day - 1) % interval === 0;
+  if (killNight && target && isAlive(s, target) && !protectedIds.has(target)) deaths.push(target);
   for (const t of strikeIds) if (isAlive(s, t) && !deaths.includes(t)) deaths.push(t);
 
   s.nightActions = {};

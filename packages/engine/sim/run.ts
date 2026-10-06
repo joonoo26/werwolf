@@ -12,7 +12,7 @@ export const CONFIG_LABELS: Record<ConfigId, string> = {
   bw_pack_norepl: '4b Grenzgänger → Rudel (ohne Wolf-Ersatz)',
 };
 
-const ALL_BANDS = (v: unknown) => ({ small: v, medium: v, large: v });
+const ALL_BANDS = (v: unknown) => ({ tiny: v, small: v, medium: v, large: v });
 const OTHERS = ['scout', 'tracker', 'alchemist', 'guardian', 'hunter', 'shadowwolf'];
 
 export function rulesFor(cfg: ConfigId): { rules: DeepPartial<Rules> | undefined; bwChoice?: 'village' | 'pack' } {
@@ -29,7 +29,7 @@ export function rulesFor(cfg: ConfigId): { rules: DeepPartial<Rules> | undefined
           borderwalkerReplacesWolf: replace,
           startSpecials: ALL_BANDS([{ count: 1, weight: 1 }]),
           maxLaterSpecials: ALL_BANDS(0),
-          roles: { ...Object.fromEntries(OTHERS.map((r) => [r, { enabled: false }])), borderwalker: { minPlayers: 6 } },
+          roles: { ...Object.fromEntries(OTHERS.map((r) => [r, { enabled: false }])), borderwalker: { minPlayers: 6, enabled: true } },
         } as never,
       };
     }

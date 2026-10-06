@@ -17,7 +17,7 @@ L.push('## Sonderrollen (aktuelle Konfiguration)\n');
 L.push('| Rolle | Seite | Gewicht | ab Spielern | Freischaltung | Fähigkeiten |');
 L.push('|---|---|---|---|---|---|');
 for (const d of Object.values(r.roles).filter((x) => x.special)) {
-  L.push(`| ${d.id} | ${d.faction === 'pack' ? 'Rudel' : 'Dorf'} | ${d.weight} | ${d.minPlayers} | ${d.unlock.triggers.join(', ')}${d.unlock.latestDay ? ` (bis Tag ${d.unlock.latestDay})` : ''} | ${d.abilities.map(describeAbility).join('<br>') || (d.startChoice ? 'geheime Fraktionswahl vor der ersten Nacht' : '–')} |`);
+  L.push(`| ${d.id}${d.enabled ? "" : " (deaktiviert)"} | ${d.faction === 'pack' ? 'Rudel' : 'Dorf'} | ${d.weight} | ${d.minPlayers} | ${d.unlock.triggers.join(', ')}${d.unlock.latestDay ? ` (bis Tag ${d.unlock.latestDay})` : ''} | ${d.abilities.map(describeAbility).join('<br>') || (d.startChoice ? 'geheime Fraktionswahl vor der ersten Nacht' : '–')} |`);
 }
 L.push('\n## Spielerzahl → Wölfe → Startrollen → spätere Rollen\n');
 L.push('| Spieler | Wölfe | Sonderrollen beim Start (Anzahl: %) | mögliche Startrollen (Anteil der Partien) | max. spätere | mögliche spätere Rollen (Auslöser) |');

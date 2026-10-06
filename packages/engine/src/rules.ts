@@ -27,9 +27,10 @@ function role(def: Partial<RoleDef> & Pick<RoleDef, 'id' | 'faction'>): RoleDef 
 const ab = (a: AbilityDef): AbilityDef => a;
 
 export const DEFAULT_RULES: Rules = {
-  minPlayers: 6,
+  minPlayers: 4,
   maxPlayers: 14,
-  wolvesByPlayers: { 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  wolvesByPlayers: { 4: 1, 5: 1, 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  nightKillInterval: {},
   borderwalkerReplacesWolf: true,
   roles: {
     villager: role({ id: 'villager', faction: 'village', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
@@ -54,7 +55,7 @@ export const DEFAULT_RULES: Rules = {
       ],
     }),
     borderwalker: role({
-      id: 'borderwalker', faction: 'village', weight: 1, minPlayers: 8,
+      id: 'borderwalker', faction: 'village', weight: 1, minPlayers: 8, enabled: false, // vollständig implementiert, standardmäßig deaktiviert (Wirkung wird separat getestet)
       startChoice: true, unlock: { triggers: ['start'], earliestDay: 1, latestDay: 1 },
     }),
     hunter: role({
@@ -67,12 +68,13 @@ export const DEFAULT_RULES: Rules = {
     }),
   },
   startSpecials: {
+    tiny: [{ count: 0, weight: 50 }, { count: 1, weight: 50 }],
     small: [{ count: 0, weight: 50 }, { count: 1, weight: 50 }],
     medium: [{ count: 0, weight: 25 }, { count: 1, weight: 45 }, { count: 2, weight: 30 }],
     large: [{ count: 1, weight: 50 }, { count: 2, weight: 50 }],
   },
-  maxLaterSpecials: { small: 1, medium: 2, large: 3 },
-  comboLimits: [{ roles: ['scout', 'tracker'], max: { small: 1, medium: 1, large: 2 } }],
+  maxLaterSpecials: { tiny: 1, small: 1, medium: 2, large: 3 },
+  comboLimits: [{ roles: ['scout', 'tracker'], max: { tiny: 1, small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
   moments: {
     quest_reward: { noRoleChance: 0.3 },
@@ -119,6 +121,7 @@ function deepMerge(target: Record<string, unknown>, src: Record<string, unknown>
 }
 
 export function sizeBand(playerCount: number): SizeBand {
+  if (playerCount <= 6) return 'tiny';
   if (playerCount <= 7) return 'small';
   if (playerCount <= 10) return 'medium';
   return 'large';

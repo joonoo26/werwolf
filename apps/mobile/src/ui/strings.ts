@@ -8,7 +8,7 @@ export const t = {
   common: { back: 'Zurück', cancel: 'Abbrechen', ok: 'Okay', loading: 'Einen Moment …', error: 'Das hat nicht geklappt. Versuche es noch einmal.' },
   create: { title: 'Neues Spiel', name: 'Dein Name', pin: 'Dein persönlicher PIN', pinHint: '4–6 Ziffern. Er schützt deine geheimen Informationen.', classic: 'Klassisch', classicHint: 'Ohne feste Dauer. Das Dorf bestätigt die Phasenwechsel.', evening: 'Abendmodus', eveningHint: 'Feste Zieldauer. Das Dorf bekommt einen Countdown zur nächsten Nacht.', duration: 'Zieldauer', hours: (h: number) => `${h} Std.`, submit: 'Dorf gründen' },
   join: { title: 'Spiel beitreten', code: 'Raumcode', scan: 'QR-Code scannen', submit: 'Beitreten', reclaim: 'Schon dabei? Auf diesem Gerät fortsetzen' },
-  lobby: { title: 'Dorfplatz', code: 'Raumcode', share: 'Zeigt diesen Code oder QR-Code', players: (n: number) => `${n} im Dorf`, need: 'Mindestens 6, höchstens 14 Spieler.', ready: 'Bereit', notReady: 'Nicht bereit', start: 'Spiel starten', waiting: 'Warten, bis alle bereit sind …', hostOnly: 'Der Host startet das Spiel.', leave: 'Verlassen', remove: 'Entfernen' },
+  lobby: { title: 'Dorfplatz', code: 'Raumcode', share: 'Zeigt diesen Code oder QR-Code', players: (n: number) => `${n} im Dorf`, need: 'Mindestens 4, höchstens 14 Spieler.', ready: 'Bereit', notReady: 'Nicht bereit', start: 'Spiel starten', waiting: 'Warten, bis alle bereit sind …', hostOnly: 'Der Host startet das Spiel.', leave: 'Verlassen', remove: 'Entfernen' },
   phase: {
     speaker_election: 'Dorfsprecher',
     day: 'Tag',
@@ -41,7 +41,7 @@ export const t = {
   chat: { title: 'Nachrichten', empty: 'Noch keine Gespräche. Schreibe jemandem im Dorf.', newChat: 'Neue Nachricht', placeholder: 'Nachricht schreiben …', send: 'Senden', unread: (n: number) => `${n} ungelesen`, group: 'Gruppe' },
   players: { title: 'Spieler im Dorf', out: 'ausgeschieden' },
   more: { title: 'Mehr', rules: 'Regeln', chronicle: 'Chronik', emergency: 'Technische Notfallfunktion', emergencyHint: 'Setzt das Spiel fort, falls ein Gerät ausgefallen ist.', emergencyDo: 'Fortsetzen erzwingen', leave: 'Zum Startbildschirm' },
-  errors: { room_not_found: 'Diesen Raum gibt es nicht.', game_already_started: 'Das Spiel läuft schon.', room_full: 'Das Dorf ist voll.', name_taken: 'Dieser Name ist schon vergeben.', invalid_pin: 'Der PIN braucht 4 bis 6 Ziffern.', invalid_name: 'Bitte gib einen Namen ein.', not_all_ready: 'Noch nicht alle sind bereit.', invalid_roster: 'Es braucht 6 bis 14 Spieler.', wrong_pin: 'Der PIN stimmt nicht.' } as Record<string, string>,
+  errors: { room_not_found: 'Diesen Raum gibt es nicht.', game_already_started: 'Das Spiel läuft schon.', room_full: 'Das Dorf ist voll.', name_taken: 'Dieser Name ist schon vergeben.', invalid_pin: 'Der PIN braucht 4 bis 6 Ziffern.', invalid_name: 'Bitte gib einen Namen ein.', not_all_ready: 'Noch nicht alle sind bereit.', invalid_roster: 'Es braucht 4 bis 14 Spieler.', wrong_pin: 'Der PIN stimmt nicht.' } as Record<string, string>,
 };
 
 export const roleNames: Record<RoleId, string> = {

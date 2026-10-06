@@ -35,7 +35,7 @@ describe('Spielstart', () => {
   });
 
   it('lehnt zu kleine Gruppen ab', async () => {
-    const w = await lobby(db, 5);
+    const w = await lobby(db, 3);
     expect(await startGame(db.store, { roomId: w.roomId, userId: w.users[0]!, now: NOW, seed: seed() })).toMatchObject({ ok: false, code: 'invalid_roster' });
   });
 });

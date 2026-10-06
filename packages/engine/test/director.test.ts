@@ -12,9 +12,11 @@ const ctx = (over: Partial<Parameters<typeof isRoleAllowed>[1]> = {}) => ({
 
 describe('Rollen-Pools und Freischaltung (vorab konfiguriert)', () => {
   it('Grenzgänger ist reine Startrolle', () => {
-    expect(isRoleAllowed(DEFAULT_RULES.roles.borderwalker, ctx({ trigger: 'start', day: 1 }), DEFAULT_RULES)).toBe(true);
-    expect(isRoleAllowed(DEFAULT_RULES.roles.borderwalker, ctx({ trigger: 'quest_reward' }), DEFAULT_RULES)).toBe(false);
-    expect(isRoleAllowed(DEFAULT_RULES.roles.borderwalker, ctx({ trigger: 'day_start' }), DEFAULT_RULES)).toBe(false);
+    const on = mergeRules({ roles: { borderwalker: { enabled: true } } } as never);
+    expect(isRoleAllowed(DEFAULT_RULES.roles.borderwalker, ctx({ trigger: 'start', day: 1 }), DEFAULT_RULES)).toBe(false); // standardmäßig deaktiviert
+    expect(isRoleAllowed(on.roles.borderwalker, ctx({ trigger: 'start', day: 1 }), on)).toBe(true);
+    expect(isRoleAllowed(on.roles.borderwalker, ctx({ trigger: 'quest_reward' }), on)).toBe(false);
+    expect(isRoleAllowed(on.roles.borderwalker, ctx({ trigger: 'day_start' }), on)).toBe(false);
   });
   it('respektiert Mindestspielerzahl, Aktivierung und Gewicht aus der Konfiguration', () => {
     expect(isRoleAllowed(DEFAULT_RULES.roles.hunter, ctx({ playerCount: 7 }), DEFAULT_RULES)).toBe(false);

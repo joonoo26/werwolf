@@ -1,5 +1,7 @@
 # Balance-Simulation (20.000 Partien je Zelle)
 
+> **Nur technischer Baseline-Test.** Die Bots haben stark vereinfachtes Deduktionsverhalten; die absoluten Siegquoten sind **kein** Balancing-Ergebnis und führten zu keiner Regeländerung. Der Lauf stammt vom Stand vor der Erweiterung auf 4–14 Spieler und vor dem Deaktivieren des Grenzgängers (nicht neu simuliert).
+
 Bot-Verhaltensmodell: siehe `packages/engine/sim/policy.ts` (stark vereinfacht, symmetrisch; **kein Ersatz für Playtests**). Klassisch-Modus, Quest-Erfolg 50 %, Jäger deaktiviert.
 
 ## 6 Spieler
