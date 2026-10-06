@@ -42,6 +42,7 @@ describe('Rudelziel', () => {
     // p5 wird verbannt
     s = JSON.parse(JSON.stringify(s));
     s = advanceTo(s, 'council', T0 + 3);
+    s = tick(s, T0 + 4, { force: true }); // Diskussion → Abstimmung
     for (const p of alive(s)) s = must(s, p.id, { type: 'vote', target: p.id === 'p5' ? 'p4' : 'p5' }, T0 + 6);
     s = tick(s, T0 + 3_000_000);
     expect(s.players.p5!.alive).toBe(false);

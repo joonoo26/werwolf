@@ -1,7 +1,7 @@
 export * from './types';
 export { Rng, seedToState } from './rng';
 export { DEFAULT_RULES, mergeRules, ROLE_IDS, SPECIAL_ROLE_IDS, sizeBand, wolfCount } from './rules';
-export { createGame, initialUses, applyCommand, tick, nextDeadline, checkWin, livingPlayers, councilReadyFlag } from './engine';
+export { createGame, initialUses, applyCommand, tick, nextDeadline, checkWin, livingPlayers, councilReadyFlag, voteReadyFlag } from './engine';
 export { publicView, privateView, packChannelMembers } from './views';
 export type { PublicView, PrivateView, PublicPlayer, PublicCouncil, AbilitySpec } from './views';
 export { planDay, roundsLeft } from './schedule';

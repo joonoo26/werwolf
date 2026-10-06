@@ -92,17 +92,17 @@ describe('Startverteilung', () => {
     const roles = Object.fromEntries(['scout', 'tracker', 'alchemist', 'guardian', 'borderwalker', 'shadowwolf'].map((r) => [r, { enabled: false }]));
     for (let i = 0; i < 100; i++) {
       const s = createGame({ roster: roster(12), hostId: 'p1', mode: 'classic', seed: 'off' + i, now: T0, rules: { roles } as never });
-      for (const p of Object.values(s.players)) expect(['villager', 'wolf', 'hunter']).toContain(p.role);
+      for (const p of Object.values(s.players)) expect(['villager', 'wolf']).toContain(p.role);
     }
   });
 });
 
 describe('Rollen-Momente: Impulse verraten nicht, ob eine Rolle vergeben wurde', () => {
   it('bei jedem Moment erscheint derselbe Impuls – auch wenn keine Rolle vergeben wird', () => {
-    const rules = { moments: { day_start: { momentChance: 1, grantChance: 0 } } } as never;
+    const rules = { moments: { day_start: { noRoleChance: 1 } } } as never;
     const none = createGame({ roster: roster(10), hostId: 'p1', mode: 'classic', seed: 'm', now: T0, rules });
-    // Zwei Partien mit identischem Ablauf, aber grantChance 0 vs 1: öffentliche Sicht ist identisch strukturiert
-    const rules1 = { moments: { day_start: { momentChance: 1, grantChance: 1 } } } as never;
+    // Zwei Partien mit identischem Ablauf, aber noRoleChance 1 vs 0: öffentliche Sicht ist identisch strukturiert
+    const rules1 = { moments: { day_start: { noRoleChance: 0 } } } as never;
     const some = createGame({ roster: roster(10), hostId: 'p1', mode: 'classic', seed: 'm', now: T0, rules: rules1 });
     expect(none.impulse?.textKey).toBe(some.impulse?.textKey);
   });

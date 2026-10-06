@@ -37,13 +37,13 @@ describe('Quest-Belohnungen', () => {
     expect(impulses(fail)).toHaveLength(before);
     expect(fail.events.at(-1)!.data).toMatchObject({ success: false });
   });
-  it('Rollen-Belohnung: Impuls immer bei Erfolg, Vergabe nur nach grantChance', () => {
-    const none = day({ moments: { quest_reward: { momentChance: 1, grantChance: 0 } } });
+  it('Rollen-Belohnung: Impuls immer bei Erfolg, Vergabe nur nach noRoleChance', () => {
+    const none = day({ moments: { quest_reward: { noRoleChance: 1 } } });
     const r0 = runQuest(none, 'q-koordination-1', alive(none).map((p) => p.id));
     expect(r0.impulse?.kind).toBe('change');
     expect(Object.values(r0.players).map((p) => p.role)).toEqual(Object.values(none.players).map((p) => p.role));
 
-    const some = day({ moments: { quest_reward: { momentChance: 1, grantChance: 1 } } });
+    const some = day({ moments: { quest_reward: { noRoleChance: 0 } } });
     const r1 = runQuest(some, 'q-koordination-1', alive(some).map((p) => p.id));
     expect(r1.impulse?.kind).toBe('change');
     expect(Object.values(r1.players).filter((p) => p.role !== 'villager' && p.role !== 'wolf').length)
@@ -53,8 +53,8 @@ describe('Quest-Belohnungen', () => {
     expect(impulses(failed)).toHaveLength(impulses(some).length);
   });
   it('Impuls ist in beiden Fällen identisch (gleicher Text, gleiche Dauer)', () => {
-    const a = runQuest(day({ moments: { quest_reward: { momentChance: 1, grantChance: 0 } } }), 'q-koordination-1', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
-    const b = runQuest(day({ moments: { quest_reward: { momentChance: 1, grantChance: 1 } } }), 'q-koordination-1', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
+    const a = runQuest(day({ moments: { quest_reward: { noRoleChance: 1 } } }), 'q-koordination-1', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
+    const b = runQuest(day({ moments: { quest_reward: { noRoleChance: 0 } } }), 'q-koordination-1', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
     expect(a.impulse?.textKey).toBe(b.impulse?.textKey);
     expect(a.impulse!.showUntil - a.impulse!.at).toBe(b.impulse!.showUntil - b.impulse!.at);
   });

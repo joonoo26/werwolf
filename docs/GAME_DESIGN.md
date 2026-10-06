@@ -1,5 +1,5 @@
 # DAS DORF – GAME DESIGN
-**Version 0.4 – kompakte Source of Truth** (Änderungen ggü. 0.3: Dorfrat ohne Nominierung, Quest-Belohnungen, Grenzgänger, konfigurierbare Sonderrollen, Rollen-Direktor ohne Ausgleichslogik, Rollen-Timing, Nacht-Timing, Rudelgröße)
+**Version 0.5 – kompakte Source of Truth** (Änderungen ggü. 0.3: Dorfrat ohne Nominierung/Verteidigung und ohne hartes Zeitlimit, Quest-Belohnungen, Grenzgänger inkl. Rudelstärke, konfigurierbare Sonderrollen, Rollen-Direktor ohne Ausgleichslogik, einfache Rollen-Momente, Nacht-Timing, Startwerte für Rudelgröße und Rollen)
 
 ## 1. Kernidee
 Werwolf/Social Deduction als echtes Multiplayer-Spiel ohne separaten Spielleiter.
@@ -65,8 +65,8 @@ Keine geheimen Informationen, keine notwendige Interaktion, keine Werbung währe
 Ein offiziell gestarteter Dorfrat endet **immer mit genau einer Verbannung**.
 
 Ablauf:
-1. Diskussion im Raum
-2. **Keine Nominierungsphase.** Jeder lebende Spieler wählt verbindlich in der App direkt jeden anderen wählbaren lebenden Spieler (nicht sich selbst).
+1. **Freie reale Diskussion** im Raum – keine Nominierungs- und keine separate Verteidigungsphase, **kein hartes Zeitlimit**. Die Gruppe eröffnet die digitale Abstimmung bewusst (Bereitschaft der Mehrheit).
+2. Jeder lebende Spieler wählt verbindlich in der App direkt jeden anderen wählbaren lebenden Spieler (nicht sich selbst). Auch die Abstimmung hat kein hartes Zeitlimit; ein ausgefallenes Gerät blockiert sie nie (Mehrheit gesperrt + Karenzzeit oder Host-Notfall).
 3. Wenn alle Stimmen gesperrt sind, zeigen alle gleichzeitig im Raum auf ihre gewählte Person.
 4. Die App/iPad inszeniert: `3 – 2 – 1 – ZEIGT!`
 5. Erst danach wird das digitale Ergebnis gezeigt.
@@ -81,6 +81,8 @@ Bei Gleichstand entscheidet der Dorfsprecher zwischen den gleichplatzierten Kand
 Scheidet er aus, wird ein neuer Dorfsprecher bestimmt.
 
 ## 8. Dorfrat im Abendmodus
+**Zeitliche Führung ohne abruptes Abbrechen:** Die Engine nennt einen Richtwert, ab wann abgestimmt werden sollte, und eröffnet die Abstimmung erst nach einer Gnadenfrist automatisch, falls die Gruppe es nicht selbst tut. Die Diskussion wird nie abrupt beendet.
+
 Jeder lebende Spieler kann geheim `Bereit für Dorfrat` setzen oder zurücknehmen.
 
 Andere sehen weder Namen noch Zwischenstand.
@@ -168,7 +170,7 @@ Rollen können bei Spielstart oder später entstehen. Manche Rollen sind **aussc
 
 Alle erhalten gleichzeitig einen neutralen Dorfimpuls. Nur der ausgewählte Spieler sieht die geheime Rolleninformation.
 
-**Der Impuls verrät nie, ob tatsächlich eine Rolle vergeben wurde:** Er erscheint bei jedem vorab definierten Rollen-Moment, unabhängig davon, ob dabei eine Rolle vergeben wird (Moment und Vergabe sind getrennte, konfigurierbare Wahrscheinlichkeiten).
+**Der Impuls verrät nie, ob tatsächlich eine Rolle vergeben wurde:** Er erscheint bei jedem vorab definierten Rollen-Moment, unabhängig davon, ob dabei eine Rolle vergeben wird Pro Moment gibt es genau eine verständliche Wahrscheinlichkeit `noRoleChance`: mit dieser Wahrscheinlichkeit wird keine Rolle vergeben, sonst wird (falls der Pool etwas erlaubt) eine erlaubte Rolle gewichtet gezogen. Momente: nach erfolgreicher Erfüllung einer dafür konfigurierten Quest, nach dem ersten Dorfrat, an konfigurierten Tagen (Startwert: Tag 3).
 
 ## 14. Rollen-Direktor / Balance
 Zufall ja – aber **gewichteter Zufall innerhalb vorab erlaubter Rollen-Pools, Kombinationen und Freischaltzeitpunkte**.
@@ -181,12 +183,18 @@ Vorab konfiguriert werden (alles datengetrieben, siehe `packages/engine/src/rule
 - erlaubte Kombinationen (z. B. höchstens eine Rolle aus einer Gruppe starker Informationsrollen)
 - Anzahl Sonderrollen beim Start und Obergrenze für spätere Vergabe je Gruppengröße
 - die Rudelgröße je Spielerzahl
+- die **Rollen-Momente** (siehe §17): Zeitpunkt + eine einzige Wahrscheinlichkeit „keine Rolle"
 
-Regeln:
+Regeln (entschieden):
 - jede Sonderrolle höchstens einmal pro Partie
 - in kleinen Gruppen weniger Sonderrollen
-- im Finale (konfigurierbare Zahl lebender Spieler) keine neue Rolle mehr einführen
+- **Bei höchstens 5 lebenden Spielern werden keine neuen Sonderrollen mehr vergeben.**
+- **Späher + Fährtenleser dürfen bei 6–10 Spielern nicht gemeinsam auftreten; ab 11 Spielern ist das erlaubt.** (Gezählt wird je Partie, nicht nur lebende Träger.)
+- **6 Spieler sind ein besonderer Balancefall:** 1 Wolf, höchstens 1 Sonderrolle beim Start und 1 später, keine starken Informationskombinationen.
 - Rollen mit Fraktionswahl nur zu Spielbeginn
+- **Grenzgänger und Rudelstärke:** Ist ein Grenzgänger im Spiel, ersetzt er einen Wolf-Platz. Die Rudelgröße der Tabelle ist das Maximum (Grenzgänger im Rudel); wählt er das Dorf, ist das Rudel einen kleiner. So entsteht kein unkontrolliert zusätzlicher Wolf. (Konfigurierbar, Wirkung wird per Simulation geprüft.)
+
+Rudelgröße (Startwerte, nicht final): 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4.
 
 Richtwert:
 - 6–7 Spieler: 0–1 Sonderrolle zu Beginn, max. 1 weitere
@@ -210,11 +218,11 @@ Informationsrolle. Darf begrenzt die Zugehörigkeit eines Spielers prüfen.
 Starke Rolle; selten und nicht zusammen mit zu vielen weiteren Informationsrollen.
 
 ### Fährtenleser
-Wählt eine kleine Gruppe lebender Spieler. Erfährt nur, ob sich mindestens ein Wolf darunter befindet.  
+Wählt eine kleine Gruppe lebender Spieler. Erfährt nur, ob sich mindestens ein Wolf darunter befindet. Startwert: 2 Nutzungen.  
 Keine direkte Identifikation.
 
 ### Alchemistin
-Besitzt zwei begrenzte Einmal-Aktionen: einmal Schutz vor einem nächtlichen Angriff und einmal eine offensive Aktion.  
+Besitzt zwei begrenzte Einmal-Aktionen: einmal Schutz vor einem nächtlichen Angriff und einmal eine offensive Aktion. **Beide dürfen nicht in derselben Nacht eingesetzt werden.**  
 Details und Timing müssen im Balancing finalisiert werden.
 
 ### Wächter
@@ -226,11 +234,12 @@ Entscheidet er sich für das Rudel, ist er anschließend **vollständig Mitglied
 Mechanik bewusst eigenständig formulieren und gestalten.
 
 ### Jäger
+**Technisch vorhanden, standardmäßig deaktiviert** (Konfiguration `enabled: false`).  
 Wenn er ausscheidet, kann eine begrenzte letzte Aktion ausgelöst werden.  
 Nur in größeren Gruppen einsetzen; genaue Stärke im Playtest bestimmen.
 
 ### Wolf-Sonderrolle: Schattenwolf
-Seltene Rudelrolle. Kann einmal eine Informationswirkung des Dorfes stören oder verschleiern.  
+Seltene Rudelrolle, **erst ab 9 Spielern**. Kann einmal eine Informationswirkung des Dorfes stören oder verschleiern.  
 Keine dauerhafte Immunität.
 
 ## 16. Spätere Rollenideen

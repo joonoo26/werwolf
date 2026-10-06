@@ -106,6 +106,7 @@ function role(def) {
     recipient: def.faction === "pack" ? "wolf" : "villager",
     startChoice: false,
     abilities: [],
+    maxAbilitiesPerNight: null,
     ...def
   };
 }
@@ -113,7 +114,8 @@ var ab = (a) => a;
 var DEFAULT_RULES = {
   minPlayers: 6,
   maxPlayers: 14,
-  wolvesByPlayers: { 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  wolvesByPlayers: { 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  borderwalkerReplacesWolf: true,
   roles: {
     villager: role({ id: "villager", faction: "village", special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     wolf: role({ id: "wolf", faction: "pack", special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
@@ -129,7 +131,7 @@ var DEFAULT_RULES = {
       faction: "village",
       weight: 2,
       minPlayers: 6,
-      abilities: [ab({ id: "track", kind: "inspect_group", uses: 3, groupSize: 3 })]
+      abilities: [ab({ id: "track", kind: "inspect_group", uses: 2, groupSize: 3 })]
     }),
     guardian: role({
       id: "guardian",
@@ -143,6 +145,7 @@ var DEFAULT_RULES = {
       faction: "village",
       weight: 2,
       minPlayers: 8,
+      maxAbilitiesPerNight: 1,
       abilities: [
         ab({ id: "potion_protect", kind: "protect", uses: 1, allowSelf: true }),
         ab({ id: "potion_strike", kind: "strike", uses: 1 })
@@ -161,6 +164,8 @@ var DEFAULT_RULES = {
       faction: "village",
       weight: 2,
       minPlayers: 8,
+      enabled: false,
+      // technisch vorhanden, standardmäßig deaktiviert
       abilities: [ab({ id: "last_shot", kind: "last_shot", uses: 1 })]
     }),
     shadowwolf: role({
@@ -180,13 +185,14 @@ var DEFAULT_RULES = {
   comboLimits: [{ roles: ["scout", "tracker"], max: { small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
   moments: {
-    quest_reward: { momentChance: 1, grantChance: 1 },
-    after_first_council: { momentChance: 0.5, grantChance: 0.6 },
-    day_start: { momentChance: 0.35, grantChance: 0.6 }
+    quest_reward: { noRoleChance: 0.3 },
+    after_first_council: { noRoleChance: 0.5 },
+    day_start: { days: [3], noRoleChance: 0.5 }
   },
   durations: {
     speakerElectionMs: 6e4,
-    votingMs: 18e4,
+    discussionTargetMs: 8 * 6e4,
+    discussionGraceMs: 3 * 6e4,
     countdownMs: 4500,
     pointingMs: 8e3,
     tiebreakMs: 6e4,
@@ -199,7 +205,7 @@ var DEFAULT_RULES = {
   },
   evening: {
     minDayMs: 10 * 6e4,
-    councilBudgetMs: 8 * 6e4,
+    councilBudgetMs: 18 * 6e4,
     questSpacingMs: 25 * 6e4,
     maxQuestsPerDay: 3
   }
@@ -276,7 +282,7 @@ function pickLateAssignment(s, trigger, rng) {
 function assignStartRoles(playerIds, rules, rng) {
   const n = playerIds.length;
   const order = rng.shuffle(playerIds);
-  const wolves = wolfCount(n, rules);
+  let wolves = wolfCount(n, rules);
   const dist = rules.startSpecials[sizeBand(n)];
   const picked = rng.weighted(dist, (d) => d.weight);
   const chosen = [];
@@ -288,6 +294,7 @@ function assignStartRoles(playerIds, rules, rng) {
     if (!def) break;
     chosen.push(def.id);
   }
+  if (chosen.includes("borderwalker") && rules.borderwalkerReplacesWolf) wolves = Math.max(1, wolves - 1);
   const assignments = [];
   let cursor = 0;
   const packRoles = chosen.filter((r) => rules.roles[r].faction === "pack");
@@ -519,9 +526,9 @@ function setImpulse(s, ctx, kind) {
 }
 function runMoment(s, ctx, trigger) {
   const m = s.rules.moments[trigger];
-  if (!ctx.rng.chance(m.momentChance)) return;
+  if (m.days && !m.days.includes(s.day)) return;
   setImpulse(s, ctx, "change");
-  if (!ctx.rng.chance(m.grantChance)) return;
+  if (ctx.rng.chance(m.noRoleChance)) return;
   const a = pickLateAssignment(s, trigger, ctx.rng);
   if (!a) return;
   setRole(s, a.playerId, a.role, s.day);
@@ -710,9 +717,12 @@ function endQuest(s, ctx) {
 }
 function startCouncil(s, ctx) {
   const nightAt = s.phase.kind === "day" ? s.phase.nightAt : null;
+  const evening = s.mode === "evening";
   const council = {
-    step: "voting",
-    endsAt: ctx.now + s.rules.durations.votingMs,
+    step: "discussion",
+    endsAt: null,
+    targetAt: evening ? ctx.now + s.rules.durations.discussionTargetMs : null,
+    autoAt: evening ? ctx.now + s.rules.durations.discussionTargetMs + s.rules.durations.discussionGraceMs : null,
     candidates: livingIds(s),
     votes: {},
     revealAt: null,
@@ -752,16 +762,27 @@ function stepCouncil(s, ctx, force) {
   const d = s.rules.durations;
   const living2 = livingIds(s);
   switch (c.step) {
+    case "discussion": {
+      const due = force || c.autoAt !== null && now >= c.autoAt || s.mode === "classic" && quorum(s, ctx, s.readyAdvance, d.confirmGraceMs);
+      if (!due) return false;
+      c.step = "voting";
+      c.endsAt = null;
+      s.readyAdvance = [];
+      s.majorityAt = null;
+      return true;
+    }
     case "voting": {
       const all = living2.every((id) => c.votes[id]);
-      if (!(all || now >= c.endsAt || force)) return false;
+      const cast = Object.keys(c.votes).filter((id) => living2.includes(id));
+      if (!(all || force || quorum(s, ctx, cast, d.confirmGraceMs))) return false;
+      s.majorityAt = null;
       c.step = "showdown";
       c.revealAt = now + d.countdownMs;
       c.endsAt = c.revealAt + d.pointingMs;
       return true;
     }
     case "showdown": {
-      if (!(now >= c.endsAt || force)) return false;
+      if (!(now >= (c.endsAt ?? 0) || force)) return false;
       const tally = tallyVotes(s, c);
       c.tally = tally;
       const top = Math.max(0, ...Object.values(tally));
@@ -784,12 +805,12 @@ function stepCouncil(s, ctx, force) {
       return true;
     }
     case "tiebreak": {
-      if (!(now >= c.endsAt || force)) return false;
+      if (!(now >= (c.endsAt ?? 0) || force)) return false;
       banish(s, ctx, ctx.rng.pick(c.tied ?? living2), true);
       return true;
     }
     case "result": {
-      if (!(now >= c.endsAt || force)) return false;
+      if (!(now >= (c.endsAt ?? 0) || force)) return false;
       proceed(s, ctx, "after_council");
       return true;
     }
@@ -932,6 +953,10 @@ function quorum(s, ctx, list, graceMs) {
   s.majorityAt = null;
   return false;
 }
+function voteReadyFlag(s) {
+  const living2 = livingIds(s);
+  return s.readyAdvance.filter((id) => living2.includes(id)).length * 2 > living2.length;
+}
 function councilReadyFlag(s) {
   const living2 = livingIds(s);
   const ready = s.readyCouncil.filter((id) => living2.includes(id));
@@ -1051,7 +1076,13 @@ function applyNightAction(s, actor, cmd) {
     case "veil":
       break;
   }
-  (s.nightActions[actor.id] ??= {})[a.id] = choice;
+  const chosen = s.nightActions[actor.id] ??= {};
+  const max = s.rules.roles[actor.role].maxAbilitiesPerNight;
+  if (max !== null && !(a.id in chosen)) {
+    const keep = Object.keys(chosen).slice(0, Math.max(0, max - 1));
+    for (const k of Object.keys(chosen)) if (!keep.includes(k)) delete chosen[k];
+  }
+  chosen[a.id] = choice;
 }
 function execute(s, actorId, cmd, ctx) {
   if (cmd.type === "tick") {
@@ -1083,7 +1114,7 @@ function execute(s, actorId, cmd, ctx) {
         if (cmd.value) s.readyCouncil.push(actor.id);
         if (!before && councilReadyFlag(s)) pushEvent(s, ctx, "council_ready");
       } else {
-        const ok = s.phase.kind === "dusk" || s.phase.kind === "morning" && s.mode === "classic";
+        const ok = s.phase.kind === "dusk" || s.phase.kind === "morning" && s.mode === "classic" || s.phase.kind === "council" && s.phase.council.step === "discussion";
         if (!ok) fail("wrong_phase", "Hier gibt es nichts zu best\xE4tigen");
         s.readyAdvance = s.readyAdvance.filter((id) => id !== actor.id);
         if (cmd.value) s.readyAdvance.push(actor.id);
@@ -1096,6 +1127,16 @@ function execute(s, actorId, cmd, ctx) {
       if (!councilReadyFlag(s)) fail("not_allowed", "Das Dorf ist noch nicht bereit f\xFCr einen Dorfrat");
       if (dp.quest) dp.councilQueued = true;
       else startCouncil(s, ctx);
+      return;
+    }
+    case "start_vote": {
+      const sp = s.phase;
+      if (sp.kind !== "council" || sp.council.step !== "discussion") return fail("wrong_phase", "Die Abstimmung kann jetzt nicht er\xF6ffnet werden");
+      if (!voteReadyFlag(s)) fail("not_allowed", "Das Dorf ist noch nicht bereit f\xFCr die Abstimmung");
+      sp.council.step = "voting";
+      sp.council.endsAt = null;
+      s.readyAdvance = [];
+      s.majorityAt = null;
       return;
     }
     case "quest_done": {
@@ -1184,7 +1225,7 @@ function nextDeadline(s) {
     case "morning":
       return p.endsAt;
     case "council":
-      return p.council.endsAt;
+      return p.council.step === "discussion" ? p.council.autoAt : p.council.endsAt;
     case "dusk":
       return p.nightAt;
     case "day": {
@@ -1223,11 +1264,17 @@ function publicView(s) {
     case "council": {
       const c = p.council;
       nightAt = p.nightAt;
-      phaseEndsAt = c.endsAt;
+      phaseEndsAt = c.step === "discussion" ? c.autoAt : c.endsAt;
+      if (c.step === "discussion" && s.mode === "classic") {
+        advance = { ready: s.readyAdvance.filter((id) => s.players[id]?.alive).length, total: living2.length };
+      }
       const cast = Object.keys(c.votes).filter((id) => s.players[id]?.alive).length;
       council = {
         step: c.step,
         endsAt: c.endsAt,
+        targetAt: c.targetAt,
+        autoAt: c.autoAt,
+        voteReady: c.step === "discussion" ? voteReadyFlag(s) : false,
         candidates: c.candidates,
         progress: c.step === "voting" ? { cast, total: living2.length } : null,
         revealAt: c.revealAt,
@@ -1468,7 +1515,7 @@ function neutralPush(prev, next) {
     case "morning":
       return { title, body: "Im Dorf hat sich etwas ver\xE4ndert." };
     case "council":
-      return next.council?.step === "voting" ? { title, body: "Das Dorf wird zusammengerufen." } : null;
+      return next.council?.step === "discussion" ? { title, body: "Das Dorf wird zusammengerufen." } : null;
     case "ended":
       return { title, body: "Das Spiel ist zu Ende." };
     default:
@@ -1489,6 +1536,8 @@ function parseCommand(raw) {
       return (raw.topic === "council" || raw.topic === "advance") && typeof raw.value === "boolean" ? { type: "ready", topic: raw.topic, value: raw.value } : null;
     case "start_council":
       return { type: "start_council" };
+    case "start_vote":
+      return { type: "start_vote" };
     case "quest_done":
       return { type: "quest_done" };
     case "vote_speaker":

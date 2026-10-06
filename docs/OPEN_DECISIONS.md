@@ -5,29 +5,29 @@ aber einige **Lücken**, die für eine lauffähige Engine geschlossen werden mus
 `packages/engine/src/rules.ts` (Startwerte für Playtests); Interpretationen sind hier gesammelt und sollen im
 Playtest bestätigt oder geändert werden. Nichts davon wurde stillschweigend als „Regel" festgeschrieben.
 
-## Entschieden (in GAME_DESIGN.md v0.4 festgeschrieben)
-- **Dorfrat ohne Nominierung**: Jeder Lebende wählt direkt jeden anderen Lebenden → alle Stimmen gesperrt → 3‑2‑1‑ZEIGT! → erst dann das digitale Ergebnis → Gleichstand entscheidet der Dorfsprecher. Immer genau eine Verbannung (ohne gültige Stimmen oder Entscheidung: Zufall).
-- **Quest-Belohnungen**: Abschließen allein belohnt nie. Nur ausdrücklich konfigurierte Quests (`QuestDef.reward`) lösen bei Erfolg Hinweis/Ereignis/Rollen-Moment aus. Aktuell konfiguriert: `q-wissen-1` (Hinweis), `q-koordination-1` (Rollen-Moment); Ereignis-Belohnungen sind vorbereitet, aber keine Quest nutzt sie.
-- **Grenzgänger im Rudel** = vollständiges Rudelmitglied inkl. Kanal/Ziel/Wolf-Zählung.
-- **Sonderrollen datengetrieben** (`Rules.roles`): Wirkung (`abilities`), Häufigkeit (`weight`), Aktivierung (`enabled`, `minPlayers`, `unlock`) konfigurierbar. Nichts davon ist Produktregel.
-- **Kein Dynamic Difficulty Balancing**: Rollenvergabe nur aus vorab erlaubten Pools/Kombinationen/Freischaltzeitpunkten; Stärke der Parteien fließt nirgends ein (Test vorhanden).
-- **Rollen-Timing**: Start oder später an vorab definierten Momenten. Der Impuls erscheint bei jedem Moment unabhängig davon, ob etwas vergeben wird (`momentChance` vs. `grantChance`).
+## Entschieden (in GAME_DESIGN.md v0.5 festgeschrieben)
+- **Dorfrat**: freie reale Diskussion → Gruppe eröffnet die digitale Abstimmung bewusst → jeder wählt direkt jeden anderen Lebenden → alle Stimmen gesperrt → 3‑2‑1‑ZEIGT! → erst dann das Ergebnis → Gleichstand entscheidet der Dorfsprecher. **Keine Nominierung, keine Verteidigungsphase, kein hartes Zeitlimit** (weder Diskussion noch Abstimmung). Ein ausgefallenes Gerät blockiert nie (Mehrheit + 60 s Karenz oder Host-Notfall). Immer genau eine Verbannung (ohne gültige Stimmen: Zufall).
+- **Abendmodus**: Engine führt zeitlich (Richtwert 8 min, danach 3 min Gnadenfrist, dann automatische Eröffnung der Abstimmung), bricht die Diskussion nie abrupt ab; die Gruppe kann früher per Mehrheit eröffnen.
+- **Quest-Belohnungen**: Abschließen allein belohnt nie; nur ausdrücklich konfigurierte Quests (`q-wissen-1` Hinweis, `q-koordination-1` Rollen-Moment) bei Erfolg (alle Lebenden bestätigen vor Ablauf der Zeit). Ereignis-Belohnungen vorbereitet, ungenutzt.
+- **Grenzgänger** im Rudel = vollständiges Rudelmitglied (Kanal, Ziel, zählt als Wolf). **Rudelstärke**: Er ersetzt einen Wolf-Platz (`borderwalkerReplacesWolf`); Tabellenwert = Maximum, bei Dorfwahl ist das Rudel einen kleiner.
+- **Rudelgröße** (Startwerte, nicht final): 6→1, 7→2, 8→2, 9→2, 10→3, 11→3, 12→3, 13→4, 14→4.
+- **Sonderrollen datengetrieben** (`Rules.roles`). Startwerte: Fährtenleser 2 Nutzungen; Alchemistin nur ein Trank pro Nacht (`maxAbilitiesPerNight: 1`); Jäger technisch vorhanden, **standardmäßig deaktiviert**; Schattenwolf ab 9 Spielern.
+- **Kein Dynamic Difficulty Balancing**: Vergabe nur aus vorab erlaubten Pools/Kombinationen/Freischaltzeitpunkten; Parteistärke fließt nirgends ein (Test).
+- **Regeln**: ≤5 Lebende → keine neuen Sonderrollen; Späher + Fährtenleser nie gemeinsam bei 6–10 Spielern (je Partie gezählt, nicht nur lebende Träger), ab 11 erlaubt; 6 Spieler als Balancefall (1 Wolf, ≤1 Startrolle, ≤1 später, keine Informationskombination).
+- **Rollen-Momente vereinfacht**: pro Moment eine Wahrscheinlichkeit `noRoleChance`; der Impuls erscheint bei jedem Moment. Startwerte: Quest 30 %, nach erstem Dorfrat 50 %, Tag 3 50 % „keine Rolle".
 - **Nacht-/Timing-Schutz** bleibt: feste Nachtlänge, feste Fenster, identische Impulse/Haptik/Push.
-- **Rudelgröße** ist ein zentral konfigurierbarer Startwert (`wolvesByPlayers`), nicht final.
 
 ## Weiterhin offen / Annahmen (bitte prüfen)
-1. **Verteidigungsphase entfällt**: Ohne Nominierung gibt es keine Kandidaten mehr, daher läuft der Dorfrat direkt als Abstimmung (Dauer 180 s). Falls eine eigene Verteidigungsrunde gewünscht ist, bitte sagen.
-2. **„Erfolgreiche Erfüllung" einer Quest** = alle Lebenden bestätigen vor Ablauf der Zeit (Startwert, je Quest anpassbar).
-3. **Finale-Regel** („im Finale keine neue Rolle", aus §14 übernommen): zustandsabhängig (Zahl Lebender ≤ 5), aber nicht stärkebasiert; abschaltbar mit `finaleAlive: 0`. Bitte bestätigen oder streichen.
-4. **Kombinationslimit** Späher + Fährtenleser: höchstens eine Rolle der Gruppe bei 6–10 Spielern, zwei ab 11 (vorab definiert, kein Stärkevergleich).
-5. **Rudelziel**: Mehrheit der Rudelstimmen, bei Gleichstand/ohne Vorschlag zufälliges zulässiges Ziel; änderbar bis Nachtende.
-6. **Nacht fix** (kein vorzeitiges Ende) und **Jäger-Schuss** im festen Ergebnisfenster (wirksam am Fensterende); der Schuss selbst ist öffentlich sichtbar.
-7. **Dorfsprecher-Wahl** am ersten Tag und nach Ausscheiden des Sprechers (Gleichstand: Zufall).
-8. **Phasenwechsel im Klassik-Modus**: alle bestätigt oder Mehrheit + 60 s Karenz; Host kann im Notfall erzwingen.
-9. **Abendmodus**: ein Dorfrat pro Tag, automatischer Start zur spätesten Zeit; Nacht zum geplanten Zeitpunkt (früher per Mehrheit); Zeitplanung nach Worst-Case-Rundenzahl.
-10. **Gleichzeitiger Sieg beider Seiten** (niemand lebt): Dorf hat Vorrang. Dorfanzeige = eigener Raumzugang, kein Spielerplatz. Ausgeschiedene sehen nur ihre eigene Privatsicht (für den letzten Schuss), keine Chats.
+1. **„Erfolgreiche Erfüllung" einer Quest** = alle Lebenden bestätigen vor Ablauf der Zeit (Startwert, je Quest anpassbar).
+2. **Kombinationslimit** zählt je Partie (auch ausgeschiedene Träger), nicht nur „aktive/lebende".
+3. **Rudelziel**: Mehrheit der Rudelstimmen, bei Gleichstand/ohne Vorschlag zufälliges zulässiges Ziel; änderbar bis Nachtende.
+4. **Nacht fix** (kein vorzeitiges Ende); Jäger-Schuss (falls aktiviert) im festen Ergebnisfenster, öffentlich sichtbar.
+5. **Dorfsprecher-Wahl** am ersten Tag und nach Ausscheiden des Sprechers (Gleichstand: Zufall).
+6. **Phasenwechsel im Klassik-Modus**: alle bestätigt oder Mehrheit + 60 s Karenz; Host kann im Notfall erzwingen.
+7. **Abendmodus**: ein Dorfrat pro Tag, Eröffnung spätestens zur geplanten Zeit; Nacht zum geplanten Zeitpunkt (früher per Mehrheit); Zeitplanung nach Worst-Case-Rundenzahl.
+8. **Gleichzeitiger Sieg beider Seiten** (niemand lebt): Dorf hat Vorrang. Dorfanzeige = eigener Raumzugang, kein Spielerplatz. Ausgeschiedene sehen nur ihre eigene Privatsicht, keine Chats.
 
-Aktuelle Zahlen/Tabellen: `npm run balance:table`.
+Aktuelle Zahlen/Tabellen: `npm run balance:table`. Simulationen: `npm run simulate` (siehe `docs/BALANCE_SIMULATION.md` nach einem Lauf).
 
 ## Bewusst nicht umgesetzt (außerhalb des MVP-Umfangs / benötigt Accounts)
 - Werbe-SDK und In-App-Käufe (RevenueCat/StoreKit): Regeln sind in `apps/mobile/src/logic/ads.ts` getestet, `rooms.ad_free` existiert; Anbindung braucht Store-Accounts.

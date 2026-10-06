@@ -60,7 +60,8 @@ export function DisplayView() {
         <PhaseGlyph phase={pub.phase} size={56} />
         <Text v="display" style={{ fontSize: 52 }} accessibilityRole="header">{heading}</Text>
         {remaining !== null && <Text v="huge" style={{ color: colors.fire400 }}>{formatCountdown(remaining)}</Text>}
-        <Text style={{ color: colors.ivory300 }}>{c ? t.council.votingHint : t.phaseHint[pub.phase]}</Text>
+        <Text style={{ color: colors.ivory300 }}>{c ? (c.step === 'discussion' ? t.council.discussionHint : t.council.votingHint) : t.phaseHint[pub.phase]}</Text>
+        {c?.voteReady && <Text v="title" style={{ color: colors.fire400 }}>{t.council.voteReady}</Text>}
         {pub.councilReady && <Text v="title" style={{ color: colors.fire400 }}>{t.dash.councilReady}</Text>}
         {c?.progress && <Text v="small">{t.council.waitingVotes(c.progress.cast, c.progress.total)}</Text>}
         {quest && <View style={{ maxWidth: size * 0.6, alignItems: 'center', gap: 6 }}><Text v="label">{t.dash.quest}</Text><Text v="title" style={{ textAlign: 'center' }}>{quest.title}</Text><Text v="small" style={{ textAlign: 'center' }}>{quest.goal}</Text></View>}

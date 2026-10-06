@@ -142,6 +142,8 @@ export function CouncilStage({ pub }: Props) {
           <Text v="display" accessibilityRole="header">{t.phase.council}</Text>
         </Center>
 
+        {c.step === 'discussion' && <Discussion pub={pub} />}
+
         {c.step === 'voting' && (
           <>
             <Text v="title" style={{ textAlign: 'center' }}>{t.council.voting}</Text>
@@ -304,5 +306,37 @@ export function EndStage({ pub }: Props) {
         </Card>
       </Pad>
     </Backdrop>
+  );
+}
+
+/** Freie reale Diskussion; die Gruppe eröffnet die Abstimmung bewusst. Im Abendmodus führt der Richtwert, ohne abzubrechen. */
+function Discussion({ pub }: Props) {
+  const c = pub.council!;
+  const { alive } = useMe();
+  const { act, busy, error } = useAct();
+  const now = useNow(1000);
+  const [ready, setReady] = useState(false);
+  const target = c.targetAt;
+  const past = target !== null && now >= target;
+  return (
+    <>
+      <Text v="title" style={{ textAlign: 'center' }}>{t.council.discussion}</Text>
+      <Text v="small" style={{ textAlign: 'center' }}>{t.council.discussionHint}</Text>
+      {target !== null && (
+        <Text v="small" style={{ textAlign: 'center', color: past ? colors.fire400 : colors.ivory300 }} accessibilityLiveRegion="polite">
+          {past ? (c.autoAt !== null && now < c.autoAt ? t.council.timeToVote : t.council.voteSoon) : ''}
+        </Text>
+      )}
+      {c.voteReady && <Text v="title" style={{ textAlign: 'center', color: colors.fire400 }} accessibilityLiveRegion="polite">{t.council.voteReady}</Text>}
+      {pub.advance && <Text v="small" style={{ textAlign: 'center' }}>{t.dash.ready(pub.advance.ready, pub.advance.total)}</Text>}
+      {alive && (
+        <View style={{ gap: space.md }}>
+          {c.voteReady && pub.mode === 'evening' && <Button label={t.council.openVote} busy={busy} onPress={() => void act({ type: 'start_vote' })} />}
+          <Button variant={c.voteReady && pub.mode === 'evening' ? 'secondary' : 'primary'} label={ready ? t.dash.readyWithdraw : t.council.readyVote} busy={busy}
+            onPress={async () => { if (await act({ type: 'ready', topic: 'advance', value: !ready })) setReady(!ready); }} />
+        </View>
+      )}
+      <Err code={error} />
+    </>
   );
 }

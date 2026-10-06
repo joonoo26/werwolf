@@ -1,6 +1,6 @@
 // Projektionen des geheimen Zustands. Der Server schreibt NUR diese Sichten in Tabellen,
 // die Clients lesen dürfen. Der volle GameState verlässt den Server nie.
-import { councilReadyFlag, livingPlayers } from './engine';
+import { councilReadyFlag, livingPlayers, voteReadyFlag } from './engine';
 import type {
   AbilityChoice,
   Faction,
@@ -21,8 +21,13 @@ export interface PublicPlayer {
 }
 
 export interface PublicCouncil {
-  step: 'voting' | 'showdown' | 'tiebreak' | 'result';
-  endsAt: number;
+  step: 'discussion' | 'voting' | 'showdown' | 'tiebreak' | 'result';
+  endsAt: number | null;
+  /** Abendmodus: Richtwert für die Abstimmung / automatische Eröffnung (Diskussion wird nie abrupt beendet). */
+  targetAt: number | null;
+  autoAt: number | null;
+  /** Das Dorf ist bereit, die Abstimmung zu eröffnen (nur Mehrheit, keine Namen). */
+  voteReady: boolean;
   candidates: PlayerId[];
   /** Nur Anzahl, nie wer wie gewählt hat. */
   progress: { cast: number; total: number } | null;
@@ -87,11 +92,17 @@ export function publicView(s: GameState): PublicView {
     case 'council': {
       const c = p.council;
       nightAt = p.nightAt;
-      phaseEndsAt = c.endsAt;
+      phaseEndsAt = c.step === 'discussion' ? c.autoAt : c.endsAt;
+      if (c.step === 'discussion' && s.mode === 'classic') {
+        advance = { ready: s.readyAdvance.filter((id) => s.players[id]?.alive).length, total: living.length };
+      }
       const cast = Object.keys(c.votes).filter((id) => s.players[id]?.alive).length;
       council = {
         step: c.step,
         endsAt: c.endsAt,
+        targetAt: c.targetAt,
+        autoAt: c.autoAt,
+        voteReady: c.step === 'discussion' ? voteReadyFlag(s) : false,
         candidates: c.candidates,
         progress: c.step === 'voting' ? { cast, total: living.length } : null,
         revealAt: c.revealAt,

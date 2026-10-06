@@ -76,22 +76,28 @@ export interface RoleDef {
   /** Geheime Fraktionswahl der Person selbst (z. B. Grenzgänger). */
   startChoice: boolean;
   abilities: AbilityDef[];
+  /** Höchstens so viele Fähigkeiten pro Nacht (null = unbegrenzt). Eine neue Wahl ersetzt die bisherige. */
+  maxAbilitiesPerNight: number | null;
 }
 
 export type SizeBand = 'small' | 'medium' | 'large';
 
 export type QuestRewardDef =
   | { kind: 'hint' }
-  /** Löst einen Rollen-Moment aus (Pool, Gewicht und grantChance bestimmen, ob wirklich eine Rolle vergeben wird). */
+  /** Löst einen Rollen-Moment aus (noRoleChance und Pool bestimmen, ob wirklich eine Rolle vergeben wird). */
   | { kind: 'role' }
   /** Öffentliches Ereignis ohne Mechanik (Mechanik wird später konfiguriert). */
   | { kind: 'event'; eventKey: string };
 
+/**
+ * Rollen-Moment: ein vorab definierter Zeitpunkt. Der öffentliche Dorfimpuls erscheint bei jedem Moment.
+ * Eine einzige Wahrscheinlichkeit entscheidet, ob dabei KEINE Rolle vergeben wird; sonst wird (falls der
+ * Pool etwas erlaubt) eine erlaubte Rolle gewichtet gezogen.
+ */
 export interface MomentDef {
-  /** Wahrscheinlichkeit, dass der Moment (und damit der öffentliche Dorfimpuls) überhaupt stattfindet. */
-  momentChance: number;
-  /** Wahrscheinlichkeit, dass im Moment wirklich eine Rolle vergeben wird (Pool erlaubt vorausgesetzt). */
-  grantChance: number;
+  noRoleChance: number;
+  /** Nur day_start: an welchen Tagen der Moment stattfindet. */
+  days?: number[];
 }
 
 export interface Rules {
@@ -99,6 +105,12 @@ export interface Rules {
   maxPlayers: number;
   /** Anzahl Rudelmitglieder je Spielerzahl (Startwerte, zentral anpassbar). */
   wolvesByPlayers: Record<number, number>;
+  /**
+   * Ist ein Grenzgänger im Spiel, ersetzt er einen Wolf-Platz: Die Rudelgröße der Tabelle ist das Maximum
+   * (Grenzgänger im Rudel); wählt er das Dorf, ist das Rudel einen kleiner. So entsteht kein unkontrolliert
+   * zusätzlicher Wolf.
+   */
+  borderwalkerReplacesWolf: boolean;
   roles: Record<RoleId, RoleDef>;
   /** Verteilung der Sonderrollen beim Start je Größenband (GAME_DESIGN §14 Richtwerte). */
   startSpecials: Record<SizeBand, { count: number; weight: number }[]>;
@@ -112,7 +124,10 @@ export interface Rules {
   moments: Record<Exclude<Trigger, 'start'>, MomentDef>;
   durations: {
     speakerElectionMs: number;
-    votingMs: number;
+    /** Abendmodus: Richtwert, ab wann die Engine zur Abstimmung auffordert (Diskussion wird nie abrupt beendet). */
+    discussionTargetMs: number;
+    /** Abendmodus: Gnadenfrist nach dem Richtwert, bevor die Abstimmung automatisch eröffnet wird. */
+    discussionGraceMs: number;
     countdownMs: number; // 3 – 2 – 1 – ZEIGT!
     pointingMs: number; // Zeit zum gleichzeitigen Zeigen
     tiebreakMs: number;
@@ -154,11 +169,15 @@ export interface ActiveQuest {
   startedAt: number;
 }
 
-export type CouncilStep = 'voting' | 'showdown' | 'tiebreak' | 'result';
+export type CouncilStep = 'discussion' | 'voting' | 'showdown' | 'tiebreak' | 'result';
 
 export interface CouncilState {
   step: CouncilStep;
-  endsAt: number;
+  /** Frist des aktuellen Schritts; null bei freier Diskussion und Abstimmung (kein hartes Limit). */
+  endsAt: number | null;
+  /** Abendmodus: Richtwert für die Eröffnung der Abstimmung / automatische Eröffnung. */
+  targetAt: number | null;
+  autoAt: number | null;
   /** Alle bei Beginn lebenden Spieler sind wählbar (keine Nominierung). */
   candidates: PlayerId[];
   votes: Record<PlayerId, PlayerId>;
@@ -262,6 +281,7 @@ export type Command =
   | { type: 'tick'; force?: boolean }
   | { type: 'ready'; topic: 'council' | 'advance'; value: boolean }
   | { type: 'start_council' }
+  | { type: 'start_vote' }
   | { type: 'quest_done' }
   | { type: 'vote_speaker'; target: PlayerId }
   | { type: 'vote'; target: PlayerId }

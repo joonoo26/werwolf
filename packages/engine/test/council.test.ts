@@ -41,7 +41,12 @@ describe('Dorfrat-Start (Klassisch)', () => {
 });
 
 describe('Dorfrat-Ablauf (direkte Abstimmung, keine Nominierung)', () => {
-  const toVoting = (seed = 'v1', n = 8) => toCouncil(seed, n);
+  const toVoting = (seed = 'v1', n = 8) => {
+    let s = toCouncil(seed, n);
+    expect(s.phase.kind === 'council' && s.phase.council.step).toBe('discussion');
+    for (const p of alive(s)) s = must(s, p.id, { type: 'ready', topic: 'advance', value: true }, T0 + 3);
+    return s;
+  };
 
   it('beginnt sofort mit der Abstimmung; alle Lebenden sind wählbar', () => {
     const s = toVoting();
@@ -49,6 +54,35 @@ describe('Dorfrat-Ablauf (direkte Abstimmung, keine Nominierung)', () => {
     expect(s.phase.council.step).toBe('voting');
     expect(s.phase.council.candidates).toHaveLength(8);
     expect(applyCommand(s, 'p1', { type: 'nominate', target: 'p2' } as never, T0 + 3).ok).toBe(false);
+  });
+
+  it('Diskussion hat kein hartes Zeitlimit: ohne Bereitschaft läuft sie beliebig lange weiter', () => {
+    const s = toCouncil('disc');
+    if (s.phase.kind !== 'council') throw new Error('x');
+    expect(s.phase.council.step).toBe('discussion');
+    expect(s.phase.council.endsAt).toBeNull();
+    const later = tick(s, T0 + 10 * 3_600_000);
+    expect(later.phase.kind === 'council' && later.phase.council.step).toBe('discussion');
+  });
+
+  it('Klassisch: bei Mehrheit wird die Abstimmung erst nach der Karenzzeit eröffnet', () => {
+    let s = toCouncil('disc2');
+    for (const id of ['p1', 'p2', 'p3', 'p4', 'p5']) s = must(s, id, { type: 'ready', topic: 'advance', value: true }, T0 + 10);
+    expect(s.phase.kind === 'council' && s.phase.council.step).toBe('discussion');
+    s = tick(s, T0 + 10 + s.rules.durations.confirmGraceMs + 1);
+    expect(s.phase.kind === 'council' && s.phase.council.step).toBe('voting');
+  });
+
+  it('Abstimmung hat kein hartes Zeitlimit; ein ausgefallenes Gerät blockiert nicht (Mehrheit + Karenz)', () => {
+    let s = toVoting('nolimit');
+    if (s.phase.kind !== 'council') throw new Error('x');
+    expect(s.phase.council.endsAt).toBeNull();
+    s = tick(s, T0 + 5 * 3_600_000);
+    expect(s.phase.kind === 'council' && s.phase.council.step).toBe('voting'); // niemand hat gestimmt → wartet
+    for (const p of alive(s).slice(0, 5)) s = must(s, p.id, { type: 'vote', target: p.id === 'p6' ? 'p7' : 'p6' }, T0 + 6 * 3_600_000);
+    expect(s.phase.kind === 'council' && s.phase.council.step).toBe('voting');
+    s = tick(s, T0 + 6 * 3_600_000 + s.rules.durations.confirmGraceMs + 1);
+    expect(s.phase.kind === 'council' && s.phase.council.step).toBe('showdown');
   });
 
   it('Jeder darf jeden anderen Lebenden wählen, nicht sich selbst; Stimmen sind verbindlich', () => {
@@ -97,20 +131,18 @@ describe('Dorfrat-Ablauf (direkte Abstimmung, keine Nominierung)', () => {
     expect(alive(s)).toHaveLength(7);
   });
 
-  it('Ohne eine einzige Stimme endet der Dorfrat trotzdem mit genau einer Verbannung', () => {
+  it('Ohne eine einzige Stimme (Host-Notfall) endet der Dorfrat trotzdem mit genau einer Verbannung', () => {
     let s = toVoting('novotes');
-    s = tick(s, T0 + 10_000_000);
-    s = tick(s, T0 + 10_000_001);
-    s = tick(s, T0 + 10_100_000);
+    s = tick(s, T0 + 10_000_000, { force: true }); // → Showdown
+    s = tick(s, T0 + 10_000_001, { force: true }); // → Ergebnis ohne gültige Stimmen
     expect(alive(s).length).toBe(7);
   });
 
   it('Fehlende Stimmen verfallen, die abgegebenen zählen', () => {
     let s = toVoting('partial');
-    s = must(s, 'p1', { type: 'vote', target: 'p6' }, T0 + 7);
-    s = must(s, 'p2', { type: 'vote', target: 'p6' }, T0 + 7);
-    s = must(s, 'p3', { type: 'vote', target: 'p7' }, T0 + 7);
-    s = tick(s, T0 + 20_000_000);
+    for (const id of ['p1', 'p2', 'p3', 'p4']) s = must(s, id, { type: 'vote', target: 'p6' }, T0 + 7);
+    s = must(s, 'p5', { type: 'vote', target: 'p7' }, T0 + 7);
+    s = tick(s, T0 + 7 + s.rules.durations.confirmGraceMs + 1); // Mehrheit + Karenz → Showdown
     s = tick(s, T0 + 30_000_000);
     expect(s.players.p6!.alive).toBe(false);
   });

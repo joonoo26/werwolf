@@ -125,9 +125,9 @@ function setImpulse(s: GameState, ctx: Ctx, kind: 'change' | 'hint'): void {
  */
 function runMoment(s: GameState, ctx: Ctx, trigger: Exclude<Trigger, 'start'>): void {
   const m = s.rules.moments[trigger];
-  if (!ctx.rng.chance(m.momentChance)) return;
+  if (m.days && !m.days.includes(s.day)) return;
   setImpulse(s, ctx, 'change');
-  if (!ctx.rng.chance(m.grantChance)) return;
+  if (ctx.rng.chance(m.noRoleChance)) return;
   const a = pickLateAssignment(s, trigger, ctx.rng);
   if (!a) return;
   setRole(s, a.playerId, a.role, s.day);
@@ -344,12 +344,19 @@ function endQuest(s: GameState, ctx: Ctx): void {
 
 // ───────────────────────── Dorfrat ─────────────────────────
 
-/** Der Dorfrat beginnt direkt mit der Abstimmung: jeder Lebende wählt jeden anderen Lebenden. */
+/**
+ * Der Dorfrat beginnt mit freier realer Diskussion. Die Gruppe eröffnet die digitale Abstimmung bewusst
+ * (Bereitschaft/Mehrheit). Im Abendmodus führt die Engine zeitlich (Richtwert + Gnadenfrist), bricht die
+ * Diskussion aber nie abrupt ab. Es gibt keine Nominierung und keine Verteidigungsphase.
+ */
 function startCouncil(s: GameState, ctx: Ctx): void {
   const nightAt = s.phase.kind === 'day' ? s.phase.nightAt : null;
+  const evening = s.mode === 'evening';
   const council: CouncilState = {
-    step: 'voting',
-    endsAt: ctx.now + s.rules.durations.votingMs,
+    step: 'discussion',
+    endsAt: null,
+    targetAt: evening ? ctx.now + s.rules.durations.discussionTargetMs : null,
+    autoAt: evening ? ctx.now + s.rules.durations.discussionTargetMs + s.rules.durations.discussionGraceMs : null,
     candidates: livingIds(s),
     votes: {},
     revealAt: null,
@@ -393,10 +400,26 @@ function stepCouncil(s: GameState, ctx: Ctx, force: boolean): boolean {
   const living = livingIds(s);
 
   switch (c.step) {
+    case 'discussion': {
+      // Klassisch: alle bereit (oder Mehrheit + Karenz). Abendmodus: bewusst per start_vote oder zur spätesten Zeit.
+      const due =
+        force ||
+        (c.autoAt !== null && now >= c.autoAt) ||
+        (s.mode === 'classic' && quorum(s, ctx, s.readyAdvance, d.confirmGraceMs));
+      if (!due) return false;
+      c.step = 'voting';
+      c.endsAt = null;
+      s.readyAdvance = [];
+      s.majorityAt = null;
+      return true;
+    }
     case 'voting': {
-      // Alle Stimmen gesperrt (oder Frist/Notfall) → gemeinsamer Countdown 3 – 2 – 1 – ZEIGT!
+      // Kein hartes Zeitlimit. Alle Stimmen gesperrt → gemeinsamer Countdown 3 – 2 – 1 – ZEIGT!
+      // Ein ausgefallenes Gerät blockiert nie: Mehrheit gesperrt + Karenzzeit oder Host-Notfall.
       const all = living.every((id) => c.votes[id]);
-      if (!(all || now >= c.endsAt || force)) return false;
+      const cast = Object.keys(c.votes).filter((id) => living.includes(id));
+      if (!(all || force || quorum(s, ctx, cast, d.confirmGraceMs))) return false;
+      s.majorityAt = null;
       c.step = 'showdown';
       c.revealAt = now + d.countdownMs;
       c.endsAt = c.revealAt + d.pointingMs;
@@ -404,7 +427,7 @@ function stepCouncil(s: GameState, ctx: Ctx, force: boolean): boolean {
     }
     case 'showdown': {
       // Erst nach dem gemeinsamen Zeigen wird das digitale Ergebnis sichtbar.
-      if (!(now >= c.endsAt || force)) return false;
+      if (!(now >= (c.endsAt ?? 0) || force)) return false;
       const tally = tallyVotes(s, c);
       c.tally = tally;
       const top = Math.max(0, ...Object.values(tally));
@@ -428,12 +451,12 @@ function stepCouncil(s: GameState, ctx: Ctx, force: boolean): boolean {
       return true;
     }
     case 'tiebreak': {
-      if (!(now >= c.endsAt || force)) return false;
+      if (!(now >= (c.endsAt ?? 0) || force)) return false;
       banish(s, ctx, ctx.rng.pick(c.tied ?? living), true);
       return true;
     }
     case 'result': {
-      if (!(now >= c.endsAt || force)) return false;
+      if (!(now >= (c.endsAt ?? 0) || force)) return false;
       proceed(s, ctx, 'after_council');
       return true;
     }
@@ -597,6 +620,12 @@ function quorum(s: GameState, ctx: Ctx, list: PlayerId[], graceMs: number): bool
   return false;
 }
 
+/** Mehrheit der Lebenden ist bereit, die Abstimmung zu eröffnen (nur Flag, keine Namen). */
+export function voteReadyFlag(s: GameState): boolean {
+  const living = livingIds(s);
+  return s.readyAdvance.filter((id) => living.includes(id)).length * 2 > living.length;
+}
+
 export function councilReadyFlag(s: GameState): boolean {
   const living = livingIds(s);
   const ready = s.readyCouncil.filter((id) => living.includes(id));
@@ -738,7 +767,14 @@ function applyNightAction(s: GameState, actor: PlayerState, cmd: Extract<Command
     case 'veil':
       break;
   }
-  (s.nightActions[actor.id] ??= {})[a.id] = choice;
+  const chosen = (s.nightActions[actor.id] ??= {});
+  const max = s.rules.roles[actor.role].maxAbilitiesPerNight;
+  if (max !== null && !(a.id in chosen)) {
+    // Eine neue Fähigkeit ersetzt die bisherige Wahl, wenn das Nachtlimit der Rolle erreicht ist.
+    const keep = Object.keys(chosen).slice(0, Math.max(0, max - 1));
+    for (const k of Object.keys(chosen)) if (!keep.includes(k)) delete chosen[k];
+  }
+  chosen[a.id] = choice;
 }
 
 function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: Ctx): void {
@@ -775,7 +811,10 @@ function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: 
         if (cmd.value) s.readyCouncil.push(actor.id);
         if (!before && councilReadyFlag(s)) pushEvent(s, ctx, 'council_ready');
       } else {
-        const ok = s.phase.kind === 'dusk' || (s.phase.kind === 'morning' && s.mode === 'classic');
+        const ok =
+          s.phase.kind === 'dusk' ||
+          (s.phase.kind === 'morning' && s.mode === 'classic') ||
+          (s.phase.kind === 'council' && s.phase.council.step === 'discussion');
         if (!ok) fail('wrong_phase', 'Hier gibt es nichts zu bestätigen');
         s.readyAdvance = s.readyAdvance.filter((id) => id !== actor.id);
         if (cmd.value) s.readyAdvance.push(actor.id);
@@ -788,6 +827,16 @@ function execute(s: GameState, actorId: PlayerId | 'system', cmd: Command, ctx: 
       if (!councilReadyFlag(s)) fail('not_allowed', 'Das Dorf ist noch nicht bereit für einen Dorfrat');
       if (dp.quest) dp.councilQueued = true;
       else startCouncil(s, ctx);
+      return;
+    }
+    case 'start_vote': {
+      const sp = s.phase;
+      if (sp.kind !== 'council' || sp.council.step !== 'discussion') return fail('wrong_phase', 'Die Abstimmung kann jetzt nicht eröffnet werden');
+      if (!voteReadyFlag(s)) fail('not_allowed', 'Das Dorf ist noch nicht bereit für die Abstimmung');
+      sp.council.step = 'voting';
+      sp.council.endsAt = null;
+      s.readyAdvance = [];
+      s.majorityAt = null;
       return;
     }
     case 'quest_done': {
@@ -889,7 +938,7 @@ export function nextDeadline(s: GameState): number | null {
     case 'morning':
       return p.endsAt;
     case 'council':
-      return p.council.endsAt;
+      return p.council.step === 'discussion' ? p.council.autoAt : p.council.endsAt;
     case 'dusk':
       return p.nightAt;
     case 'day': {

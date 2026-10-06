@@ -77,7 +77,7 @@ export function assignStartRoles(
 ): { assignments: Assignment[]; startSpecialCount: number } {
   const n = playerIds.length;
   const order = rng.shuffle(playerIds);
-  const wolves = wolfCount(n, rules);
+  let wolves = wolfCount(n, rules);
 
   const dist = rules.startSpecials[sizeBand(n)];
   const picked = rng.weighted(dist, (d) => d.weight);
@@ -91,6 +91,8 @@ export function assignStartRoles(
     chosen.push(def.id);
   }
 
+  // Grenzgänger ersetzt einen Wolf-Platz (Rudelgröße der Tabelle = Maximum bei Rudelwahl).
+  if (chosen.includes('borderwalker') && rules.borderwalkerReplacesWolf) wolves = Math.max(1, wolves - 1);
   const assignments: Assignment[] = [];
   let cursor = 0;
   const packRoles = chosen.filter((r) => rules.roles[r].faction === 'pack');

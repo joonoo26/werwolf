@@ -120,6 +120,10 @@ export function simulate(
       if (rng.chance(0.5)) act(rng.pick(living), { type: 'start_council' });
     } else if (phase.kind === 'council') {
       const c = phase.council;
+      if (c.step === 'discussion') {
+        for (const id of living) if (rng.chance(0.7)) act(id, { type: 'ready', topic: 'advance', value: true });
+        if (rng.chance(0.5)) act(rng.pick(living), { type: 'start_vote' });
+      }
       if (c.step === 'voting')
         for (const id of living) {
           const pool = c.candidates.filter((x) => x !== id);

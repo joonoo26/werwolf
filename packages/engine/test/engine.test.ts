@@ -33,7 +33,8 @@ describe('Spielstart', () => {
     for (let n = 6; n <= 14; n++) {
       const s = newGame(n, `n${n}`);
       const pack = Object.values(s.players).filter((p) => p.faction === 'pack');
-      expect(pack.length).toBe(wolfCount(n, DEFAULT_RULES));
+      const bw = Object.values(s.players).some((p) => p.role === 'borderwalker');
+      expect(pack.length).toBe(wolfCount(n, DEFAULT_RULES) - (bw ? 1 : 0));
       expect(Object.keys(s.players).length).toBe(n);
     }
   });

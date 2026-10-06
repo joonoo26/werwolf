@@ -19,6 +19,7 @@ function role(def: Partial<RoleDef> & Pick<RoleDef, 'id' | 'faction'>): RoleDef 
     recipient: def.faction === 'pack' ? 'wolf' : 'villager',
     startChoice: false,
     abilities: [],
+    maxAbilitiesPerNight: null,
     ...def,
   };
 }
@@ -28,7 +29,8 @@ const ab = (a: AbilityDef): AbilityDef => a;
 export const DEFAULT_RULES: Rules = {
   minPlayers: 6,
   maxPlayers: 14,
-  wolvesByPlayers: { 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  wolvesByPlayers: { 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4 },
+  borderwalkerReplacesWolf: true,
   roles: {
     villager: role({ id: 'villager', faction: 'village', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
     wolf: role({ id: 'wolf', faction: 'pack', special: false, weight: 0, minPlayers: 1, unlock: { triggers: [], earliestDay: 1, latestDay: null } }),
@@ -38,14 +40,14 @@ export const DEFAULT_RULES: Rules = {
     }),
     tracker: role({
       id: 'tracker', faction: 'village', weight: 2, minPlayers: 6,
-      abilities: [ab({ id: 'track', kind: 'inspect_group', uses: 3, groupSize: 3 })],
+      abilities: [ab({ id: 'track', kind: 'inspect_group', uses: 2, groupSize: 3 })],
     }),
     guardian: role({
       id: 'guardian', faction: 'village', weight: 3, minPlayers: 7,
       abilities: [ab({ id: 'protect', kind: 'protect', uses: null, noRepeatTarget: true, allowSelf: true })],
     }),
     alchemist: role({
-      id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8,
+      id: 'alchemist', faction: 'village', weight: 2, minPlayers: 8, maxAbilitiesPerNight: 1,
       abilities: [
         ab({ id: 'potion_protect', kind: 'protect', uses: 1, allowSelf: true }),
         ab({ id: 'potion_strike', kind: 'strike', uses: 1 }),
@@ -56,7 +58,7 @@ export const DEFAULT_RULES: Rules = {
       startChoice: true, unlock: { triggers: ['start'], earliestDay: 1, latestDay: 1 },
     }),
     hunter: role({
-      id: 'hunter', faction: 'village', weight: 2, minPlayers: 8,
+      id: 'hunter', faction: 'village', weight: 2, minPlayers: 8, enabled: false, // technisch vorhanden, standardmäßig deaktiviert
       abilities: [ab({ id: 'last_shot', kind: 'last_shot', uses: 1 })],
     }),
     shadowwolf: role({
@@ -73,13 +75,14 @@ export const DEFAULT_RULES: Rules = {
   comboLimits: [{ roles: ['scout', 'tracker'], max: { small: 1, medium: 1, large: 2 } }],
   finaleAlive: 5,
   moments: {
-    quest_reward: { momentChance: 1, grantChance: 1 },
-    after_first_council: { momentChance: 0.5, grantChance: 0.6 },
-    day_start: { momentChance: 0.35, grantChance: 0.6 },
+    quest_reward: { noRoleChance: 0.3 },
+    after_first_council: { noRoleChance: 0.5 },
+    day_start: { days: [3], noRoleChance: 0.5 },
   },
   durations: {
     speakerElectionMs: 60_000,
-    votingMs: 180_000,
+    discussionTargetMs: 8 * 60_000,
+    discussionGraceMs: 3 * 60_000,
     countdownMs: 4_500,
     pointingMs: 8_000,
     tiebreakMs: 60_000,
@@ -92,7 +95,7 @@ export const DEFAULT_RULES: Rules = {
   },
   evening: {
     minDayMs: 10 * 60_000,
-    councilBudgetMs: 8 * 60_000,
+    councilBudgetMs: 18 * 60_000,
     questSpacingMs: 25 * 60_000,
     maxQuestsPerDay: 3,
   },

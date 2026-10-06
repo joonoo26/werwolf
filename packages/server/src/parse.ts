@@ -15,6 +15,8 @@ export function parseCommand(raw: unknown): Command | null {
         : null;
     case 'start_council':
       return { type: 'start_council' };
+    case 'start_vote':
+      return { type: 'start_vote' };
     case 'quest_done':
       return { type: 'quest_done' };
     case 'vote_speaker':
